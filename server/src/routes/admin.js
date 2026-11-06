@@ -1,23 +1,26 @@
 import { Router } from "express";
 import mongoose from "mongoose";
 import User from "../models/User.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAdult, requireAuth } from "../middleware/auth.js";
 import { requireAdmin } from "../middleware/admin.js";
 
 const router = Router();
 
-router.use(requireAuth, requireAdmin);
+router.use(requireAuth, requireAdult, requireAdmin);
 
 router.get("/users", async (_req, res, next) => {
   try {
     const users = await User.find()
-      .select("name email messagingEnabled isAdmin createdAt")
+      .select("name username age isPrivate email messagingEnabled isAdmin createdAt")
       .sort({ createdAt: -1 })
       .lean();
     return res.json({
       users: users.map((user) => ({
         id: user._id.toString(),
         name: user.name,
+        username: user.username,
+        age: user.age,
+        isPrivate: user.isPrivate === true,
         email: user.email,
         messagingEnabled: user.messagingEnabled !== false,
         isAdmin: user.isAdmin === true,

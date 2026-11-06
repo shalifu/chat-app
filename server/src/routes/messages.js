@@ -2,7 +2,7 @@ import { Router } from "express";
 import mongoose from "mongoose";
 import Message from "../models/Message.js";
 import User from "../models/User.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAdult, requireAuth } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -16,7 +16,7 @@ function serializeMessage(message) {
   };
 }
 
-router.get("/:userId", requireAuth, async (req, res, next) => {
+router.get("/:userId", requireAuth, requireAdult, async (req, res, next) => {
   try {
     const { userId } = req.params;
     if (!mongoose.isValidObjectId(userId)) {
@@ -25,8 +25,20 @@ router.get("/:userId", requireAuth, async (req, res, next) => {
     if (userId === req.userId) {
       return res.status(400).json({ message: "You cannot start a conversation with yourself." });
     }
-    if (!(await User.exists({ _id: userId }))) {
+    const [person, currentUser] = await Promise.all([
+      User.findById(userId).select("isPrivate +privateContacts"),
+      User.findById(req.userId).select("isPrivate +privateContacts"),
+    ]);
+    if (!person) {
       return res.status(404).json({ message: "User not found." });
+    }
+    const privateConversation = person.isPrivate || currentUser.isPrivate;
+    if (
+      privateConversation &&
+      (!person.privateContacts.some((contact) => contact.equals(req.userId)) ||
+        !currentUser.privateContacts.some((contact) => contact.equals(userId)))
+    ) {
+      return res.status(403).json({ message: "Add each other by five-digit ID before opening this private conversation." });
     }
 
     const messages = await Message.find({
