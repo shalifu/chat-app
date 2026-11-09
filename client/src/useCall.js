@@ -53,6 +53,7 @@ export default function useCall(socket, token, onIncomingCall) {
   const localStreamRef = useRef(null);
   const pendingCandidatesRef = useRef([]);
   const qualityTimerRef = useRef(null);
+  const connectionTimeoutRef = useRef(null);
   const onIncomingCallRef = useRef(onIncomingCall);
   onIncomingCallRef.current = onIncomingCall;
 
@@ -64,6 +65,8 @@ export default function useCall(socket, token, onIncomingCall) {
   const stopMedia = useCallback(() => {
     if (qualityTimerRef.current) window.clearInterval(qualityTimerRef.current);
     qualityTimerRef.current = null;
+    if (connectionTimeoutRef.current) window.clearTimeout(connectionTimeoutRef.current);
+    connectionTimeoutRef.current = null;
     peerConnectionRef.current?.close();
     peerConnectionRef.current = null;
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -102,7 +105,7 @@ export default function useCall(socket, token, onIncomingCall) {
   }, [token]);
 
   const createPeerConnection = useCallback((activeCall, iceServers) => {
-    const connection = new RTCPeerConnection({ iceServers });
+    const connection = new RTCPeerConnection({ iceServers, iceCandidatePoolSize: 4 });
     peerConnectionRef.current = connection;
     localStreamRef.current?.getTracks().forEach((track) => connection.addTrack(track, localStreamRef.current));
     connection.ontrack = (event) => {
@@ -116,13 +119,15 @@ export default function useCall(socket, token, onIncomingCall) {
     };
     connection.onconnectionstatechange = () => {
       if (connection.connectionState === "connected") {
+        if (connectionTimeoutRef.current) window.clearTimeout(connectionTimeoutRef.current);
+        connectionTimeoutRef.current = null;
+        setCallError("");
         publishCall({ ...callRef.current, status: "connected" });
       } else if (connection.connectionState === "failed") {
-        setCallError("The call could not connect. Check your internet connection and try again.");
+        setCallError("Could not establish the call. Check both internet connections; this network may require a TURN relay.");
         endCall();
       }
     };
-
     qualityTimerRef.current = window.setInterval(async () => {
       if (connection.connectionState !== "connected") return;
       try {
@@ -177,7 +182,7 @@ export default function useCall(socket, token, onIncomingCall) {
       ? { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 15, max: 20 } }
       : networkQuality === "Good"
         ? { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 24, max: 30 } }
-        : { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 30 } };
+        : { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } };
     let stream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -206,16 +211,13 @@ export default function useCall(socket, token, onIncomingCall) {
       incoming: false,
     };
     try {
-      preparedStream = await prepareMedia(video);
-      if (callRef.current) {
-        preparedStream.getTracks().forEach((track) => track.stop());
-        if (localStreamRef.current === preparedStream) {
-          localStreamRef.current = null;
-          setLocalStream(null);
-        }
-        return;
-      }
-      const iceServers = await loadIceServers();
+      const results = await Promise.allSettled([prepareMedia(video), loadIceServers()]);
+      const mediaResult = results[0];
+      const iceResult = results[1];
+      if (mediaResult.status === "fulfilled") preparedStream = mediaResult.value;
+      const failedResult = results.find((result) => result.status === "rejected");
+      if (failedResult) throw failedResult.reason;
+      const iceServers = iceResult.value;
       if (callRef.current) {
         preparedStream.getTracks().forEach((track) => track.stop());
         if (localStreamRef.current === preparedStream) {
@@ -226,6 +228,7 @@ export default function useCall(socket, token, onIncomingCall) {
       }
       publishCall(nextCall);
       publishedCall = true;
+      createPeerConnection(nextCall, iceServers);
       const inviteResult = await new Promise((resolve, reject) => {
         socket.emit("call:invite", { callId: nextCall.callId, to: person.id, video }, (result) => {
           if (result?.ok) resolve(result);
@@ -233,7 +236,6 @@ export default function useCall(socket, token, onIncomingCall) {
         });
       });
       if (!inviteResult?.ok || callRef.current?.callId !== nextCall.callId) return;
-      createPeerConnection(nextCall, iceServers);
     } catch (error) {
       if (callRef.current?.callId === nextCall.callId) {
         endCall();
@@ -263,9 +265,11 @@ export default function useCall(socket, token, onIncomingCall) {
         });
       });
       const mediaPromise = prepareMedia(activeCall.video);
-      const results = await Promise.allSettled([preparingPromise, mediaPromise]);
+      const iceServersPromise = loadIceServers();
+      const results = await Promise.allSettled([preparingPromise, mediaPromise, iceServersPromise]);
       const preparingResult = results[0];
       const mediaResult = results[1];
+      const iceServersResult = results[2];
       if (mediaResult.status === "fulfilled") stream = mediaResult.value;
       const failedResult = results.find((result) => result.status === "rejected");
       if (failedResult) throw failedResult.reason;
@@ -278,16 +282,8 @@ export default function useCall(socket, token, onIncomingCall) {
         return;
       }
       if (!preparingResult.value?.ok) throw new Error("This call is no longer available.");
-      const iceServers = await loadIceServers();
-      if (callRef.current?.callId !== activeCall.callId) {
-        stream.getTracks().forEach((track) => track.stop());
-        if (localStreamRef.current === stream) {
-          localStreamRef.current = null;
-          setLocalStream(null);
-        }
-        return;
-      }
-      createPeerConnection(activeCall, iceServers);
+      if (callRef.current?.callId !== activeCall.callId) return;
+      createPeerConnection(activeCall, iceServersResult.value);
       publishCall({ ...activeCall, status: "connecting" });
       socket.emit("call:accept", { callId: activeCall.callId }, (result) => {
         if (!result?.ok) {
@@ -295,6 +291,13 @@ export default function useCall(socket, token, onIncomingCall) {
           endCall(false);
         }
       });
+      if (connectionTimeoutRef.current) window.clearTimeout(connectionTimeoutRef.current);
+      const connection = peerConnectionRef.current;
+      connectionTimeoutRef.current = window.setTimeout(() => {
+        if (connection?.connectionState !== "connected" && callRef.current?.callId === activeCall.callId) {
+          setCallError("Still connecting. Check your internet connection; restrictive networks may need a TURN relay.");
+        }
+      }, 15000);
     } catch (error) {
       if (stream) {
         stream.getTracks().forEach((track) => track.stop());
@@ -355,6 +358,12 @@ export default function useCall(socket, token, onIncomingCall) {
       try {
         const connection = peerConnectionRef.current;
         if (!connection) return;
+        if (connectionTimeoutRef.current) window.clearTimeout(connectionTimeoutRef.current);
+        connectionTimeoutRef.current = window.setTimeout(() => {
+          if (connection.connectionState !== "connected" && callRef.current?.callId === callId) {
+            setCallError("Still connecting. Check your internet connection; restrictive networks may need a TURN relay.");
+          }
+        }, 15000);
         const offer = await connection.createOffer();
         await connection.setLocalDescription(offer);
         publishCall({ ...activeCall, status: "connecting" });
