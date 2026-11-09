@@ -52,6 +52,8 @@ export default function useCall(socket, token, onIncomingCall) {
   const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
   const pendingCandidatesRef = useRef([]);
+  const outgoingCandidatesRef = useRef([]);
+  const outgoingSignalReadyCallIdRef = useRef(null);
   const qualityTimerRef = useRef(null);
   const connectionTimeoutRef = useRef(null);
   const onIncomingCallRef = useRef(onIncomingCall);
@@ -72,6 +74,8 @@ export default function useCall(socket, token, onIncomingCall) {
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
     localStreamRef.current = null;
     pendingCandidatesRef.current = [];
+    outgoingCandidatesRef.current = [];
+    outgoingSignalReadyCallIdRef.current = null;
     setLocalStream(null);
     setRemoteStream(null);
     setMuted(false);
@@ -114,7 +118,11 @@ export default function useCall(socket, token, onIncomingCall) {
     };
     connection.onicecandidate = (event) => {
       if (event.candidate && socket?.connected) {
-        socket.emit("call:candidate", { callId: activeCall.callId, candidate: event.candidate });
+        if (activeCall.incoming || outgoingSignalReadyCallIdRef.current === activeCall.callId) {
+          socket.emit("call:candidate", { callId: activeCall.callId, candidate: event.candidate });
+        } else {
+          outgoingCandidatesRef.current.push(event.candidate);
+        }
       }
     };
     connection.onconnectionstatechange = () => {
@@ -226,6 +234,8 @@ export default function useCall(socket, token, onIncomingCall) {
         }
         return;
       }
+      outgoingCandidatesRef.current = [];
+      outgoingSignalReadyCallIdRef.current = null;
       publishCall(nextCall);
       publishedCall = true;
       createPeerConnection(nextCall, iceServers);
@@ -235,7 +245,16 @@ export default function useCall(socket, token, onIncomingCall) {
           else reject(new Error(result?.message || "The call could not be started."));
         });
       });
-      if (!inviteResult?.ok || callRef.current?.callId !== nextCall.callId) return;
+      if (!inviteResult?.ok) return;
+      if (callRef.current?.callId !== nextCall.callId) {
+        socket.emit("call:end", { callId: nextCall.callId });
+        return;
+      }
+      outgoingSignalReadyCallIdRef.current = nextCall.callId;
+      for (const candidate of outgoingCandidatesRef.current) {
+        socket.emit("call:candidate", { callId: nextCall.callId, candidate });
+      }
+      outgoingCandidatesRef.current = [];
     } catch (error) {
       if (callRef.current?.callId === nextCall.callId) {
         endCall();
