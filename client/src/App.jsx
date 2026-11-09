@@ -3,12 +3,15 @@ import { io } from "socket.io-client";
 import {
   ArrowLeft,
   ArrowUp,
+  Activity,
   Bell,
   BellOff,
   CheckCheck,
   ChevronDown,
   CircleHelp,
   Copy,
+  Clock3,
+  LogIn,
   LogOut,
   LockKeyhole,
   MessageCircle,
@@ -23,6 +26,7 @@ import {
   Smile,
   Sparkles,
   Sun,
+  Trash2,
   UnlockKeyhole,
   UserRound,
   UsersRound,
@@ -42,7 +46,7 @@ const kinyarwanda = {
   "People can find public accounts by username.": "Abantu bashobora kugushaka bakoresheje izina ryawe.",
   "Your age": "Imyaka yawe",
   "Make my account private": "Gira konti yanjye iyihariye",
-  "People will need your five-digit ID to add you.": "Abantu bazakenera nimero yawe y'imibare itanu kugira ngo bakwongere.",
+  "People will need your five-digit ID to request a connection.": "Abantu bazakenera nimero yawe y'imibare itanu kugira ngo basabe ko muhuza.",
   "Email address": "Imeyili",
   "Password": "Ijambo ry'ibanga",
   "At least 8 characters": "Nibura inyuguti 8",
@@ -55,6 +59,7 @@ const kinyarwanda = {
   "Messages": "Ubutumwa",
   "Search by username…": "Shakisha ukoresheje izina…",
   "Add a private account": "Ongeraho konti yihariye",
+  "Request connection with private ID": "Saba guhuza ukoresheje ID yihariye",
   "Enter 5-digit ID": "Andika ID y'imibare 5",
   "Adding…": "Birimo kongerwa…",
   "Add": "Ongeraho",
@@ -65,8 +70,8 @@ const kinyarwanda = {
   "Finding your people…": "Turimo gushaka abantu bawe…",
   "No one found": "Nta muntu ubonetse",
   "Your circle starts here": "Abo muganira bahera hano",
-  "Try another username or add a private account with its ID.": "Gerageza irindi zina cyangwa wongere konti yihariye ukoresheje ID yayo.",
-  "Search by username or add someone with their five-digit ID.": "Shakisha izina cyangwa wongere umuntu ukoresheje ID ye y'imibare itanu.",
+  "Try another username or request a private account with its ID.": "Gerageza irindi zina cyangwa usabe guhuza na konti yihariye ukoresheje ID yayo.",
+  "Search for someone by username or request a private account with its ID.": "Shakisha izina cyangwa usabe guhuza na konti yihariye ukoresheje ID yayo.",
   "Sign out": "Sohoka",
   "Profile": "Umwirondoro",
   "My profile": "Umwirondoro wanjye",
@@ -80,7 +85,7 @@ const kinyarwanda = {
   "Message notifications": "Kumenyeshwa ubutumwa",
   "Show browser alerts when new messages arrive.": "Erekana imenyesha iyo ubutumwa bushya buje.",
   "Private account": "Konti yihariye",
-  "Only ID-added people can find and message you.": "Abantu mwongeyeho bakoresheje ID ni bo bashobora kukubona no kukwandikira.",
+  "Only accepted connections can message you. Share your ID to receive requests.": "Abantu mwemeye guhuza ni bo bashobora kukwandikira. Sangiza abandi ID yawe kugira ngo bakohereze ubusabe.",
   "Public account": "Konti igaragara",
   "People can discover you by username.": "Abantu bashobora kukubona bakoresheje izina ryawe.",
   "Language / Ururimi": "Ururimi / Language",
@@ -122,6 +127,41 @@ const kinyarwanda = {
   "Opening group…": "Itsinda ririmo gufunguka…",
   "Open my profile": "Fungura umwirondoro wanjye",
   "Invite only": "Urajyamo utumiwe gusa",
+  "Connect before chatting": "Banza musabe guhuza mbere yo kuganira",
+  "Send a connection request to start a private conversation.": "Saba guhuza kugira ngo mutangire kuganira mu ibanga.",
+  "Request connection": "Saba guhuza",
+  "Connection request sent. You can chat after they accept.": "Ubusabe bwo guhuza bwoherejwe. Muzaganira namara kubwemera.",
+  "Cancel request": "Hagarika ubusabe",
+  "wants to connect with you.": "arashaka ko muhuza.",
+  "Accept connection": "Emera guhuza",
+  "Decline": "Anga",
+  "Connected": "Mwahuye",
+  "Connection request": "Ubusabe bwo guhuza",
+  "Request sent": "Ubusabe bwoherejwe",
+  "Group not found.": "Itsinda ntiriboneka.",
+  "System administration": "Imicungire ya sisitemu",
+  "Manage accounts, review usage, and control messaging.": "Genzura konti, imikoreshereze n'ubutumwa.",
+  "Active in last 2 minutes": "Bakoresheje mu minota 2 ishize",
+  "Tracked usage": "Igihe bamaze bakoresha",
+  "Messages sent": "Ubutumwa bwoherejwe",
+  "Total sign-ins": "Inshuro zose zinjiwemo",
+  "Groups": "Amatsinda",
+  "Sorted by tracked usage. Server uptime": "Bikurikiranye hakurikijwe imikoreshereze. Seriveri imaze",
+  "Joined": "Yinjiye",
+  "Last sign-in": "Aheruka kwinjira",
+  "Last active": "Aheruka gukoresha",
+  "sign-ins": "inshuro zinjiwemo",
+  "messages": "ubutumwa",
+  "Delete account": "Siba konti",
+  "Delete account for": "Siba konti ya",
+  "Messaging controls and account deletion are enforced by the server. Usage time is estimated while the app is open.": "Igenzura ry'ubutumwa no gusiba konti bikorwa na seriveri. Igihe cyo gukoresha kibarwa igihe porogaramu ifunguye.",
+  "Notifications": "Amatangazo",
+  "Mark all as read": "Shyira yose ko yasomwe",
+  "No notifications yet": "Nta matangazo arahari",
+  "View notification": "Reba itangazo",
+  "Close notifications": "Funga amatangazo",
+  "Accepting lets you exchange private messages.": "Kwemera bituma mushobora kohererezanya ubutumwa bw'ibanga.",
+  "Loading…": "Birimo gufunguka…",
   "Create a group": "Kora itsinda",
   "Group name": "Izina ry'itsinda",
   "Create group": "Kora itsinda",
@@ -234,6 +274,21 @@ function formatDay(date) {
   return new Intl.DateTimeFormat(undefined, { month: "long", day: "numeric" }).format(value);
 }
 
+function formatDuration(seconds = 0) {
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  if (days) return `${days}d ${hours % 24}h`;
+  if (hours) return `${hours}h ${minutes % 60}m`;
+  return `${minutes}m`;
+}
+
+function formatDateTime(date) {
+  return date
+    ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(date))
+    : "Never";
+}
+
 function Avatar({ name, size = "normal", online = false }) {
   return (
     <div className={`avatar avatar-${size}`} aria-label={name}>
@@ -300,7 +355,7 @@ function AuthScreen({ onAuthenticated }) {
               <label>{t("Your name")}<input autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Alex Morgan" required minLength={2} maxLength={60} /></label>
               <label>{t("Unique username")}<input autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value.replace(/[^a-zA-Z0-9_]/g, "").toLowerCase())} placeholder="e.g. alex_morgan" required minLength={3} maxLength={24} pattern="[a-zA-Z0-9_]{3,24}" /><small className="field-hint">{t("People can find public accounts by username.")}</small></label>
               <label>{t("Your age")}<input type="number" inputMode="numeric" value={age} onChange={(event) => setAge(event.target.value)} placeholder="15 or older" required min={15} max={120} step={1} /></label>
-              <label className="privacy-choice"><input type="checkbox" checked={isPrivate} onChange={(event) => setIsPrivate(event.target.checked)} /><span><strong>{t("Make my account private")}</strong><small>{t("People will need your five-digit ID to add you.")}</small></span></label>
+              <label className="privacy-choice"><input type="checkbox" checked={isPrivate} onChange={(event) => setIsPrivate(event.target.checked)} /><span><strong>{t("Make my account private")}</strong><small>{t("People will need your five-digit ID to request a connection.")}</small></span></label>
             </>}
             <label>{t("Email address")}<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" required /></label>
             <label>{t("Password")}<input type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} value={password} onChange={(event) => setPassword(event.target.value)} placeholder={t("At least 8 characters")} required minLength={8} /></label>
@@ -350,7 +405,7 @@ function CompleteProfile({ session, onCompleted, onSignOut }) {
         <form onSubmit={submit} className="auth-form">
           <label>{t("Unique username")}<input autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value.replace(/[^a-zA-Z0-9_]/g, "").toLowerCase())} required minLength={3} maxLength={24} pattern="[a-zA-Z0-9_]{3,24}" /></label>
           <label>{t("Your age")}<input type="number" inputMode="numeric" value={age} onChange={(event) => setAge(event.target.value)} required min={15} max={120} step={1} /></label>
-          <label className="privacy-choice"><input type="checkbox" checked={isPrivate} onChange={(event) => setIsPrivate(event.target.checked)} /><span><strong>{t("Make my account private")}</strong><small>{t("People will need your five-digit ID to add you.")}</small></span></label>
+          <label className="privacy-choice"><input type="checkbox" checked={isPrivate} onChange={(event) => setIsPrivate(event.target.checked)} /><span><strong>{t("Make my account private")}</strong><small>{t("People will need your five-digit ID to request a connection.")}</small></span></label>
           {error && <div className="form-error" role="alert">{error}</div>}
           <button className="primary-button auth-submit" disabled={saving}>{saving ? t("Saving…") : t("Continue")} <ArrowUp size={16} className="button-arrow" /></button>
         </form>
@@ -443,7 +498,7 @@ function ProfileSettings({
           </button>
           <button className="settings-option" type="button" onClick={onTogglePrivacy} disabled={updatingPrivacy} aria-pressed={session.user.isPrivate}>
             {session.user.isPrivate ? <LockKeyhole size={17} /> : <UnlockKeyhole size={17} />}
-            <span><strong>{t(session.user.isPrivate ? "Private account" : "Public account")}</strong><small>{t(session.user.isPrivate ? "Only ID-added people can find and message you." : "People can discover you by username.")}</small></span>
+            <span><strong>{t(session.user.isPrivate ? "Private account" : "Public account")}</strong><small>{t(session.user.isPrivate ? "Only accepted connections can message you. Share your ID to receive requests." : "People can discover you by username.")}</small></span>
             <span className={`privacy-switch ${session.user.isPrivate ? "is-private" : ""}`} />
           </button>
         </div>
@@ -480,7 +535,7 @@ function WelcomePanel({ user, people }) {
   );
 }
 
-function GroupChatPanel({ group, session, messages, onMessagesLoaded, onMessage, onGroupUpdated, onJoined, onGoBack, onOpenProfile }) {
+function GroupChatPanel({ group, session, messages, onMessagesLoaded, onMessage, onGroupUpdated, onGoBack, onOpenProfile }) {
   const t = useT();
   const [draft, setDraft] = useState("");
   const [identifier, setIdentifier] = useState("");
@@ -550,46 +605,12 @@ function GroupChatPanel({ group, session, messages, onMessagesLoaded, onMessage,
     }
   }
 
-  async function toggleGroupPrivacy() {
-    setBusy(true);
-    setError("");
-    try {
-      const { group: updatedGroup } = await api(`/groups/${group.id}/privacy`, {
-        token: session.token,
-        method: "PATCH",
-        body: JSON.stringify({ isPrivate: !group.isPrivate }),
-      });
-      onGroupUpdated(updatedGroup);
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function joinGroup() {
-    setBusy(true);
-    setError("");
-    try {
-      const { group: joinedGroup } = await api(`/groups/${group.id}/join`, {
-        token: session.token,
-        method: "POST",
-      });
-      onJoined(joinedGroup);
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <div className="group-chat">
       <header className="chat-header">
         <button className="icon-button back-button" aria-label={t("Back to groups")} onClick={onGoBack}><ArrowLeft size={19} /></button>
         <span className="group-chat-icon"><UsersRound size={19} /></span>
-        <div className="chat-person"><h2>{group.name}</h2><span>{group.isPrivate ? <><LockKeyhole size={12} /> {t("Private group")}</> : t("Public group")} · {group.memberCount} {t("members")}</span></div>
-        {group.isMember && group.createdBy === session.user.id && <button className="group-privacy-action" type="button" onClick={toggleGroupPrivacy} disabled={busy}>{t(group.isPrivate ? "Make public" : "Make private")}</button>}
+        <div className="chat-person"><h2>{group.name}</h2><span><LockKeyhole size={12} /> {t("Private group")} · {group.memberCount} {t("members")}</span></div>
         <button className="icon-button profile-quick-button" type="button" onClick={onOpenProfile} aria-label={t("Open my profile")} title={t("My profile")}><UserRound size={18} /><span>{t("Profile")}</span></button>
       </header>
       {group.isMember ? <>
@@ -609,25 +630,28 @@ function GroupChatPanel({ group, session, messages, onMessagesLoaded, onMessage,
         </div>
         {error && <div className="inline-error" role="alert">{error}<button onClick={() => setError("")} aria-label={t("Dismiss error")}><X size={14} /></button></div>}
         <div className="composer-wrap"><form className="composer" onSubmit={send}><textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={`${t("Message")} ${group.name}…`} maxLength={4000} rows={1} /><button type="submit" className="send-button" disabled={!draft.trim() || sending} aria-label={t("Send message")}>{sending ? <span className="send-loading" /> : <Send size={17} />}</button></form></div>
-      </> : <div className="group-join-state"><span className="welcome-icon"><UsersRound size={25} /></span><h3>{t(group.isPrivate ? "Private group" : "Join this group")}</h3><p>{t("This group has")} {group.memberCount} {t("members. Join to view and send messages.")}</p>{error && <div className="form-error">{error}</div>}<button type="button" className="primary-button" disabled={busy || group.isPrivate} onClick={joinGroup}>{group.isPrivate ? t("Invite only") : busy ? t("Joining…") : t("Join group")}</button></div>}
+      </> : <div className="group-join-state"><h3>{t("Group not found.")}</h3></div>}
     </div>
   );
 }
 
-function AdminDashboard({ session, onUserUpdated }) {
+function AdminDashboard({ session, onUserUpdated, onUserDeleted }) {
   const t = useT();
   const [users, setUsers] = useState([]);
+  const [summary, setSummary] = useState(null);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState("");
+  const [deletingId, setDeletingId] = useState("");
   const [error, setError] = useState("");
 
   async function loadUsers() {
     setLoading(true);
     setError("");
     try {
-      const { users: loadedUsers } = await api("/admin/users", { token: session.token });
+      const { users: loadedUsers, summary: loadedSummary } = await api("/admin/analytics", { token: session.token });
       setUsers(loadedUsers);
+      setSummary(loadedSummary);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -657,32 +681,51 @@ function AdminDashboard({ session, onUserUpdated }) {
     }
   }
 
-  const filteredUsers = users.filter((user) =>
+  async function deleteUser(user) {
+    if (!window.confirm(`Permanently delete ${user.name} and their messages? This cannot be undone.`)) return;
+    setDeletingId(user.id);
+    setError("");
+    try {
+      await api(`/admin/users/${user.id}`, { token: session.token, method: "DELETE" });
+      setUsers((current) => current.filter((item) => item.id !== user.id));
+      onUserDeleted(user.id);
+      await loadUsers();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setDeletingId("");
+    }
+  }
+
+  const filteredUsers = [...users].sort((first, second) => second.activeSeconds - first.activeSeconds).filter((user) =>
     `${user.name} ${user.username} ${user.email}`.toLowerCase().includes(search.trim().toLowerCase())
   );
   const enabledCount = users.filter((user) => user.messagingEnabled).length;
   const privateCount = users.filter((user) => user.isPrivate).length;
+  const busy = Boolean(updatingId || deletingId);
 
   return (
     <div className="admin-dashboard">
       <header className="admin-header">
         <div>
           <span className="welcome-tag">{t("WORKSPACE SETTINGS")}</span>
-          <h2>{t("Messaging access")}</h2>
-          <p>{t("Choose who can start and receive conversations on Ububiko.")}</p>
+          <h2>{t("System administration")}</h2>
+          <p>{t("Manage accounts, review usage, and control messaging.")}</p>
         </div>
-        <button className="admin-refresh" onClick={loadUsers} disabled={loading || Boolean(updatingId)} aria-label="Refresh accounts">
+        <button className="admin-refresh" onClick={loadUsers} disabled={loading || busy} aria-label="Refresh accounts">
           <RefreshCw size={16} className={loading ? "refresh-spinning" : ""} /> {t("Refresh")}
         </button>
       </header>
       <div className="admin-stats">
-        <div className="admin-stat"><span className="admin-stat-icon"><UsersRound size={18} /></span><span><strong>{users.length}</strong><small>{t("Registered people")}</small></span></div>
-        <div className="admin-stat"><span className="admin-stat-icon enabled"><MessageSquare size={18} /></span><span><strong>{enabledCount}</strong><small>{t("Can use messaging")}</small></span></div>
-        <div className="admin-stat"><span className="admin-stat-icon paused"><ShieldOff size={18} /></span><span><strong>{users.length - enabledCount}</strong><small>{t("Messaging paused")}</small></span></div>
-        <div className="admin-stat"><span className="admin-stat-icon private"><LockKeyhole size={18} /></span><span><strong>{privateCount}</strong><small>{t("Private accounts")}</small></span></div>
+        <div className="admin-stat"><span className="admin-stat-icon"><UsersRound size={18} /></span><span><strong>{summary?.totalUsers ?? users.length}</strong><small>{t("Registered people")}</small></span></div>
+        <div className="admin-stat"><span className="admin-stat-icon enabled"><Activity size={18} /></span><span><strong>{summary?.activeNow ?? 0}</strong><small>{t("Active in last 2 minutes")}</small></span></div>
+        <div className="admin-stat"><span className="admin-stat-icon private"><Clock3 size={18} /></span><span><strong>{formatDuration(summary?.totalActiveSeconds)}</strong><small>{t("Tracked usage")}</small></span></div>
+        <div className="admin-stat"><span className="admin-stat-icon paused"><MessageSquare size={18} /></span><span><strong>{summary?.totalMessages ?? 0}</strong><small>{t("Messages sent")}</small></span></div>
+        <div className="admin-stat"><span className="admin-stat-icon private"><LogIn size={18} /></span><span><strong>{summary?.totalLogins ?? 0}</strong><small>{t("Total sign-ins")}</small></span></div>
+        <div className="admin-stat"><span className="admin-stat-icon"><UsersRound size={18} /></span><span><strong>{summary?.totalGroups ?? 0}</strong><small>{t("Groups")}</small></span></div>
       </div>
       <div className="admin-list-heading">
-        <div><h3>{t("People")}</h3><span>{t("Manage messaging access for each account.")}</span></div>
+        <div><h3>{t("People")}</h3><span>{t("Sorted by tracked usage. Server uptime")}: {formatDuration(summary?.serverUptimeSeconds)}</span></div>
         <label className="admin-search"><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("Search people")} /></label>
       </div>
       {error && <div className="admin-error" role="alert">{error}<button onClick={() => setError("")} aria-label="Dismiss error"><X size={14} /></button></div>}
@@ -690,17 +733,59 @@ function AdminDashboard({ session, onUserUpdated }) {
         {loading ? <div className="admin-empty">{t("Loading accounts…")}</div> : filteredUsers.length ? filteredUsers.map((user) => (
           <div className="admin-user-row" key={user.id}>
             <Avatar name={user.name} />
-            <div className="admin-user-info"><strong>{user.name}{user.isAdmin && <span className="admin-badge"><ShieldCheck size={12} /> Admin</span>}</strong><span>@{user.username || "username missing"} · {Number.isInteger(user.age) ? `${user.age} years old` : "age missing"} · {user.email}</span></div>
+            <div className="admin-user-info"><strong>{user.name}{user.isAdmin && <span className="admin-badge"><ShieldCheck size={12} /> Admin</span>}</strong><span>@{user.username || "username missing"} · {Number.isInteger(user.age) ? `${user.age} years old` : "age missing"} · {user.email}</span><small>{t("Joined")}: {formatDateTime(user.createdAt)} · {t("Last sign-in")}: {formatDateTime(user.lastLoginAt)} · {t("Last active")}: {formatDateTime(user.lastActiveAt)}</small></div>
+            <div className="admin-usage-metrics"><span><Clock3 size={12} /> {formatDuration(user.activeSeconds)}</span><span><LogIn size={12} /> {user.loginCount} · {t("sign-ins")}</span><span><MessageSquare size={12} /> {user.messagesSent} · {t("messages")}</span></div>
             {user.isPrivate && <span className="private-account-badge"><LockKeyhole size={12} /> Private</span>}
             <span className={`access-status ${user.messagingEnabled ? "access-on" : "access-off"}`}><i />{t(user.messagingEnabled ? "Messaging on" : "Messaging off")}</span>
-            <button className={`access-toggle ${user.messagingEnabled ? "" : "toggle-off"}`} onClick={() => toggleMessaging(user)} disabled={Boolean(updatingId)} aria-label={`${user.messagingEnabled ? "Disable" : "Enable"} messaging for ${user.name}`}>
+            <button className={`access-toggle ${user.messagingEnabled ? "" : "toggle-off"}`} onClick={() => toggleMessaging(user)} disabled={busy || user.isAdmin} aria-label={`${user.messagingEnabled ? "Disable" : "Enable"} messaging for ${user.name}`}>
               {updatingId === user.id ? <span className="toggle-spinner" /> : t(user.messagingEnabled ? "Disable" : "Enable")}
             </button>
+            {!user.isAdmin && <button className="admin-delete-button" type="button" onClick={() => deleteUser(user)} disabled={busy} aria-label={`${t("Delete account for")} ${user.name}`} title={t("Delete account")}>
+              {deletingId === user.id ? <span className="toggle-spinner" /> : <Trash2 size={15} />}
+            </button>}
           </div>
         )) : <div className="admin-empty">{search ? "No accounts match your search." : "No accounts to manage yet."}</div>}
       </div>
-      <div className="admin-note"><ShieldCheck size={15} /><span>Messaging access is checked by the server, not just hidden in the app.</span></div>
+      <div className="admin-note"><ShieldCheck size={15} /><span>{t("Messaging controls and account deletion are enforced by the server. Usage time is estimated while the app is open.")}</span></div>
     </div>
+  );
+}
+
+function NotificationInbox({
+  notifications,
+  unreadCount,
+  loading,
+  onClose,
+  onSelect,
+  onMarkAllRead,
+}) {
+  const t = useT();
+
+  return (
+    <section className="notification-panel" role="dialog" aria-label={t("Notifications")}>
+      <header className="notification-header">
+        <div><h2>{t("Notifications")}</h2><span>{unreadCount}</span></div>
+        <div className="notification-header-actions">
+          {unreadCount > 0 && <button type="button" onClick={onMarkAllRead}>{t("Mark all as read")}</button>}
+          <button className="icon-button" type="button" onClick={onClose} aria-label={t("Close notifications")}><X size={16} /></button>
+        </div>
+      </header>
+      <div className="notification-list">
+        {loading ? <div className="notification-empty">{t("Loading…")}</div> : notifications.length ? notifications.map((notification) => (
+          <button
+            type="button"
+            className={`notification-item ${notification.readAt ? "" : "notification-unread"}`}
+            key={notification.id}
+            onClick={() => onSelect(notification)}
+            aria-label={`${t("View notification")}: ${notification.title}`}
+          >
+            <span className="notification-icon">{notification.type === "connection_request" ? <UsersRound size={16} /> : notification.targetType === "group" ? <MessageSquare size={16} /> : <MessageCircle size={16} />}</span>
+            <span className="notification-copy"><strong>{notification.title}</strong><span>{notification.body}</span><small>{formatDateTime(notification.createdAt)}</small></span>
+            {!notification.readAt && <i className="notification-unread-dot" />}
+          </button>
+        )) : <div className="notification-empty">{t("No notifications yet")}</div>}
+      </div>
+    </section>
   );
 }
 
@@ -725,14 +810,20 @@ export default function App() {
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
   const [mobileChat, setMobileChat] = useState(false);
-  const [adminView, setAdminView] = useState(false);
+  const [adminView, setAdminView] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("ububiko-session") || "null")?.user?.isAdmin === true; } catch { return false; }
+  });
+  const [notifications, setNotifications] = useState([]);
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState(0);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
   const [privateId, setPrivateId] = useState("");
   const [lookingUpPrivate, setLookingUpPrivate] = useState(false);
+  const [connectionBusy, setConnectionBusy] = useState(false);
   const [updatingPrivacy, setUpdatingPrivacy] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
   const [groupName, setGroupName] = useState("");
-  const [groupIsPrivate, setGroupIsPrivate] = useState(true);
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem("ububiko-dark-mode") === "true");
   const [notificationsEnabled, setNotificationsEnabled] = useState(() => localStorage.getItem("ububiko-notifications") === "true");
@@ -746,6 +837,8 @@ export default function App() {
   notificationsEnabledRef.current = notificationsEnabled;
   const selectedPerson = people.find((person) => person.id === selectedId);
   const selectedGroup = groups.find((group) => group.id === selectedGroupId);
+  const notificationsRef = useRef(notifications);
+  notificationsRef.current = notifications;
 
   useEffect(() => {
     if (session) localStorage.setItem("ububiko-session", JSON.stringify(session));
@@ -778,22 +871,96 @@ export default function App() {
   }, [session?.token]);
 
   useEffect(() => {
-    if (!session || (
-      session.user.isAdmin !== undefined &&
-      session.user.messagingEnabled !== undefined &&
-      session.user.username &&
-      Number.isInteger(session.user.age) &&
-      session.user.userCode
-    )) return;
+    if (!session) {
+      setNotifications([]);
+      setNotificationUnreadCount(0);
+      return undefined;
+    }
+    let active = true;
+    setLoadingNotifications(true);
+    api("/notifications", { token: session.token })
+      .then(({ notifications: loaded, unreadCount }) => {
+        if (!active) return;
+        setNotifications((current) => {
+          const merged = new Map(loaded.map((item) => [item.id, item]));
+          for (const item of current) if (!merged.has(item.id)) merged.set(item.id, item);
+          return [...merged.values()].sort((first, second) => new Date(second.createdAt) - new Date(first.createdAt));
+        });
+        setNotificationUnreadCount(unreadCount);
+      })
+      .catch((requestError) => { if (active) setError(requestError.message); })
+      .finally(() => { if (active) setLoadingNotifications(false); });
+    return () => { active = false; };
+  }, [session?.token]);
+
+  useEffect(() => {
+    if (!session) return;
     let active = true;
     api("/auth/me", { token: session.token })
       .then(({ user }) => {
         if (active) {
           setSession((current) => current?.token === session.token ? { ...current, user } : current);
+          if (user.isAdmin) setAdminView(true);
         }
       })
       .catch((requestError) => { if (active) setError(requestError.message); });
     return () => { active = false; };
+  }, [session?.token]);
+
+  useEffect(() => {
+    if (!session) return undefined;
+    let active = true;
+    let sessionId = sessionStorage.getItem("ububiko-usage-session");
+    let activityQueue = Promise.resolve();
+
+    function ensureSessionId() {
+      if (!sessionId) {
+        sessionId = crypto.randomUUID();
+        sessionStorage.setItem("ububiko-usage-session", sessionId);
+      }
+      return sessionId;
+    }
+
+    function heartbeat() {
+      if (document.visibilityState === "hidden") return;
+      const currentSessionId = ensureSessionId();
+      activityQueue = activityQueue
+        .then(() => api("/activity/heartbeat", {
+          token: session.token,
+          method: "POST",
+          body: JSON.stringify({ sessionId: currentSessionId }),
+        }))
+        .catch((requestError) => { if (active) setError(requestError.message); });
+    }
+
+    function endSession() {
+      if (!sessionId) return;
+      const endingId = sessionId;
+      sessionId = null;
+      sessionStorage.removeItem("ububiko-usage-session");
+      activityQueue = activityQueue
+        .then(() => api("/activity/end", {
+          token: session.token,
+          method: "POST",
+          body: JSON.stringify({ sessionId: endingId }),
+        }))
+        .catch((requestError) => { if (active) setError(requestError.message); });
+    }
+
+    function onVisibilityChange() {
+      if (document.visibilityState === "hidden") endSession();
+      else heartbeat();
+    }
+
+    heartbeat();
+    const intervalId = window.setInterval(heartbeat, 30000);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      endSession();
+    };
   }, [session?.token]);
 
   useEffect(() => {
@@ -829,13 +996,30 @@ export default function App() {
     socket.on("group:updated", (group) => {
       setGroups((current) => current.map((item) => item.id === group.id ? group : item));
     });
+    socket.on("connection:updated", () => {
+      api("/users", { token: session.token })
+        .then(({ users }) => setPeople(users))
+        .catch((requestError) => setError(requestError.message));
+    });
+    socket.on("notification:new", (notification) => {
+      if (notificationsRef.current.some((item) => item.id === notification.id)) return;
+      setNotifications((current) => [notification, ...current].slice(0, 100));
+      setNotificationUnreadCount((current) => current + 1);
+      notifyMessage(notification.title, notification.body);
+    });
+    socket.on("account:deleted", () => {
+      setPeople([]);
+      setGroups([]);
+      setSession(null);
+    });
     socket.on("connect_error", () => setError("Live connection lost. Please refresh to reconnect."));
     return () => socket.disconnect();
   }, [session, language]);
 
   useEffect(() => {
-    if (!session || !selectedId) {
+    if (!session || !selectedId || selectedPerson?.connectionStatus !== "connected") {
       setMessages([]);
+      setLoadingMessages(false);
       return undefined;
     }
     let active = true;
@@ -861,7 +1045,7 @@ export default function App() {
       .catch((requestError) => { if (active) setError(requestError.message); })
       .finally(() => { if (active) setLoadingMessages(false); });
     return () => { active = false; };
-  }, [session, selectedId]);
+  }, [session, selectedId, selectedPerson?.connectionStatus]);
 
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -880,7 +1064,15 @@ export default function App() {
     setSelectedId(null);
     setSelectedGroupId(null);
     setAdminView(false);
+    setNotificationOpen(false);
+    setNotifications([]);
+    setNotificationUnreadCount(0);
     setError("");
+  }
+
+  function handleAuthenticated(nextSession) {
+    setSession(nextSession);
+    setAdminView(nextSession.user.isAdmin === true);
   }
 
   function updateManagedUser(updatedUser) {
@@ -894,6 +1086,77 @@ export default function App() {
         ? { ...current, user: { ...current.user, messagingEnabled: updatedUser.messagingEnabled } }
         : current
       );
+    }
+  }
+
+  function removeManagedUser(userId) {
+    setPeople((current) => current.filter((person) => person.id !== userId));
+    if (selectedId === userId) {
+      setSelectedId(null);
+      setMessages([]);
+    }
+  }
+
+  async function markNotificationRead(notification) {
+    if (notification.readAt) return;
+    await api(`/notifications/${notification.id}/read`, {
+      token: session.token,
+      method: "PATCH",
+    });
+    const readAt = new Date().toISOString();
+    setNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, readAt } : item));
+    setNotificationUnreadCount((current) => Math.max(0, current - 1));
+  }
+
+  async function markAllNotificationsRead() {
+    try {
+      await api("/notifications/read-all", { token: session.token, method: "PATCH" });
+      const readAt = new Date().toISOString();
+      setNotifications((current) => current.map((item) => ({ ...item, readAt: item.readAt || readAt })));
+      setNotificationUnreadCount(0);
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  }
+
+  async function openNotification(notification) {
+    try {
+      await markNotificationRead(notification);
+      setNotificationOpen(false);
+      setAdminView(false);
+      setError("");
+      if (notification.targetType === "group") {
+        let targetGroup = groups.find((group) => group.id === notification.targetId);
+        if (!targetGroup) {
+          const { groups: loadedGroups } = await api("/groups", { token: session.token });
+          setGroups(loadedGroups);
+          targetGroup = loadedGroups.find((group) => group.id === notification.targetId);
+        }
+        if (!targetGroup) {
+          setError("That group is no longer available.");
+          return;
+        }
+        setSelectedId(null);
+        setSelectedGroupId(targetGroup.id);
+        setMobileChat(true);
+        return;
+      }
+
+      let targetPerson = people.find((person) => person.id === notification.targetId);
+      if (!targetPerson) {
+        const { users: loadedUsers } = await api("/users", { token: session.token });
+        setPeople(loadedUsers);
+        targetPerson = loadedUsers.find((person) => person.id === notification.targetId);
+      }
+      if (!targetPerson) {
+        setError("That account is no longer available.");
+        return;
+      }
+      setSelectedGroupId(null);
+      setSelectedId(targetPerson.id);
+      setMobileChat(true);
+    } catch (requestError) {
+      setError(requestError.message);
     }
   }
 
@@ -921,6 +1184,40 @@ export default function App() {
       setError(requestError.message);
     } finally {
       setLookingUpPrivate(false);
+    }
+  }
+
+  async function requestConnection(person) {
+    setConnectionBusy(true);
+    setError("");
+    try {
+      const { user } = await api(`/users/${person.id}/connect`, {
+        token: session.token,
+        method: "POST",
+      });
+      setPeople((current) => current.map((item) => item.id === user.id ? user : item));
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setConnectionBusy(false);
+    }
+  }
+
+  async function updateConnection(action) {
+    if (!selectedPerson?.connectionId || connectionBusy) return;
+    setConnectionBusy(true);
+    setError("");
+    try {
+      await api(`/users/connections/${selectedPerson.connectionId}${action === "accept" ? "/accept" : ""}`, {
+        token: session.token,
+        method: action === "accept" ? "POST" : "DELETE",
+      });
+      const { users } = await api("/users", { token: session.token });
+      setPeople(users);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setConnectionBusy(false);
     }
   }
 
@@ -1005,7 +1302,7 @@ export default function App() {
       const { group } = await api("/groups", {
         token: session.token,
         method: "POST",
-        body: JSON.stringify({ name: groupName, isPrivate: groupIsPrivate }),
+        body: JSON.stringify({ name: groupName }),
       });
       setGroups((current) => [group, ...current]);
       setGroupMessages((current) => ({ ...current, [group.id]: [] }));
@@ -1036,7 +1333,7 @@ export default function App() {
     }));
   }
 
-  if (!session) return <LanguageContext.Provider value={language}><AuthScreen onAuthenticated={setSession} /></LanguageContext.Provider>;
+  if (!session) return <LanguageContext.Provider value={language}><AuthScreen onAuthenticated={handleAuthenticated} /></LanguageContext.Provider>;
   if (Number.isInteger(session.user.age) && session.user.age < 15) {
     return <LanguageContext.Provider value={language}><main className="age-blocked"><h1>{t("Ububiko is for ages 15 and older")}</h1><p>{t("This account cannot use the app.")}</p><button className="primary-button" onClick={signOut}>{t("Sign out")}</button></main></LanguageContext.Provider>;
   }
@@ -1050,13 +1347,27 @@ export default function App() {
       <aside className="sidebar">
         <div className="sidebar-top">
           <a className="app-brand" href="#" onClick={(event) => event.preventDefault()}><span className="brand-mark"><MessageCircle size={19} fill="currentColor" /></span><span>ububiko<small>YOUR LITTLE CORNER</small></span></a>
-          <button className="icon-button sidebar-profile-button" onClick={() => setProfileOpen(true)} aria-label={t("Open my profile and settings")} title={t("My profile")}><UserRound size={19} /><span>{t("Profile")}</span></button>
+          <div className="sidebar-top-actions">
+            <button className="icon-button notification-trigger" type="button" onClick={() => setNotificationOpen((current) => !current)} aria-label={`${t("Notifications")}${notificationUnreadCount ? ` (${notificationUnreadCount})` : ""}`} title={t("Notifications")}>
+              <Bell size={18} />
+              {notificationUnreadCount > 0 && <span className="notification-badge">{notificationUnreadCount > 99 ? "99+" : notificationUnreadCount}</span>}
+            </button>
+            <button className="icon-button sidebar-profile-button" onClick={() => setProfileOpen(true)} aria-label={t("Open my profile and settings")} title={t("My profile")}><UserRound size={19} /><span>{t("Profile")}</span></button>
+          </div>
         </div>
+        {notificationOpen && <NotificationInbox
+          notifications={notifications}
+          unreadCount={notificationUnreadCount}
+          loading={loadingNotifications}
+          onClose={() => setNotificationOpen(false)}
+          onSelect={openNotification}
+          onMarkAllRead={markAllNotificationsRead}
+        />}
         <div className="sidebar-heading"><div><span className="section-label">{t("YOUR COMMUNITY")}</span><h1>{t("Messages")} <span>{people.length}</span></h1></div><button className="icon-button add-person" aria-label={t("Find someone")} onClick={() => document.querySelector(".search-input")?.focus()}><UsersRound size={17} /></button></div>
         <div className="search-box"><Search size={16} /><input className="search-input" placeholder={t("Search by username…")} value={search} onChange={(event) => setSearch(event.target.value)} /><kbd>⌘ K</kbd></div>
         <form className="private-id-search" onSubmit={addByPrivateId}>
-          <label htmlFor="private-user-id">{t("Add a private account")}</label>
-          <div><input id="private-user-id" inputMode="numeric" pattern="[0-9]{5}" maxLength={5} value={privateId} onChange={(event) => setPrivateId(event.target.value.replace(/\D/g, "").slice(0, 5))} placeholder={t("Enter 5-digit ID")} required /><button type="submit" disabled={privateId.length !== 5 || lookingUpPrivate}>{lookingUpPrivate ? t("Adding…") : t("Add")}</button></div>
+          <label htmlFor="private-user-id">{t("Request connection with private ID")}</label>
+          <div><input id="private-user-id" inputMode="numeric" pattern="[0-9]{5}" maxLength={5} value={privateId} onChange={(event) => setPrivateId(event.target.value.replace(/\D/g, "").slice(0, 5))} placeholder={t("Enter 5-digit ID")} required /><button type="submit" disabled={privateId.length !== 5 || lookingUpPrivate}>{lookingUpPrivate ? t("Adding…") : t("Request connection")}</button></div>
         </form>
         {session.user.isAdmin && <button className={`admin-nav ${adminView ? "active" : ""}`} onClick={() => { setAdminView(true); setMobileChat(false); setSelectedId(null); setError(""); }}><ShieldCheck size={16} /> {t("Admin dashboard")} <span>{t("Manage access")}</span></button>}
         <div className="people-label"><span>{t("GROUPS")}</span><button className="group-create-button" aria-label={t("Create group")} onClick={() => setCreateGroupOpen(true)}><UsersRound size={14} /><span>{t("New")}</span></button></div>
@@ -1070,7 +1381,7 @@ export default function App() {
             setError("");
           }}>
             <span className="group-list-icon"><UsersRound size={16} /></span>
-            <span className="person-info"><span className="person-name">{group.name}</span><span className="person-preview">{group.isPrivate ? t("Private group") : `${group.memberCount} ${t("members")}`}</span></span>
+            <span className="person-info"><span className="person-name">{group.name}</span><span className="person-preview">{t("Private group")}</span></span>
             {unreadGroups[group.id] > 0 && <span className="unread-badge">{unreadGroups[group.id]}</span>}
           </button>)}
           <div className="people-label people-subheading"><span>{t("PEOPLE")}</span></div>
@@ -1078,18 +1389,18 @@ export default function App() {
             const lastMessage = messages.find((message) => message.senderId === person.id || message.recipientId === person.id);
             return <button key={person.id} className={`person-row ${person.id === selectedId ? "selected" : ""}`} onClick={() => { setAdminView(false); setSelectedGroupId(null); setSelectedId(person.id); setUnreadPeople((current) => ({ ...current, [person.id]: 0 })); setMobileChat(true); setError(""); }}>
               <Avatar name={person.name} size="normal" />
-              <span className="person-info"><span className="person-name">{person.name}</span><span className="person-preview">{person.messagingEnabled === false ? t("Messaging disabled") : person.isPrivate ? t("Private account") : `@${person.username}`}</span></span>
+              <span className="person-info"><span className="person-name">{person.name}</span><span className={`person-preview ${person.connectionStatus === "received" ? "connection-preview" : ""}`}>{person.connectionStatus === "received" ? t("Connection request") : person.connectionStatus === "sent" ? t("Request sent") : person.messagingEnabled === false ? t("Messaging disabled") : person.isPrivate ? t("Private account") : `@${person.username}`}</span></span>
               {unreadPeople[person.id] > 0 && <span className="unread-badge">{unreadPeople[person.id]}</span>}
               {lastMessage && <span className="person-time">{formatTime(lastMessage.createdAt)}</span>}
             </button>;
-          }) : <div className="empty-people"><span className="empty-icon"><UsersRound size={20} /></span><strong>{t(search ? "No one found" : "Your circle starts here")}</strong><p>{t(search ? "Try another username or add a private account with its ID." : "Search by username or add someone with their five-digit ID.")}</p></div>}
+          }) : <div className="empty-people"><span className="empty-icon"><UsersRound size={20} /></span><strong>{t(search ? "No one found" : "Your circle starts here")}</strong><p>{t(search ? "Try another username or request a private account with its ID." : "Search for someone by username or request a private account with its ID.")}</p></div>}
         </div>
         <div className="sidebar-bottom">
           <button className="signout-button" onClick={signOut}><LogOut size={15} /> {t("Sign out")}</button>
         </div>
       </aside>
       <section className="conversation">
-        {adminView && session.user.isAdmin ? <AdminDashboard session={session} onUserUpdated={updateManagedUser} /> : selectedGroup ? <GroupChatPanel
+        {adminView && session.user.isAdmin ? <AdminDashboard session={session} onUserUpdated={updateManagedUser} onUserDeleted={removeManagedUser} /> : selectedGroup ? <GroupChatPanel
           group={selectedGroup}
           session={session}
           messages={groupMessages[selectedGroup.id] || []}
@@ -1099,7 +1410,6 @@ export default function App() {
           })}
           onMessage={groupMessageAdded}
           onGroupUpdated={updateGroup}
-          onJoined={(group) => { updateGroup(group); setUnreadGroups((current) => ({ ...current, [group.id]: 0 })); }}
           onGoBack={() => setMobileChat(false)}
           onOpenProfile={() => setProfileOpen(true)}
         /> : !selectedPerson ? <WelcomePanel user={session.user} people={people} /> : <>
@@ -1109,21 +1419,42 @@ export default function App() {
             <div className="chat-person"><h2>{selectedPerson.name}</h2><span>{selectedPerson.isPrivate ? <><LockKeyhole size={12} /> {t("Private account")}</> : `@${selectedPerson.username}`}</span></div>
             <div className="chat-actions"><button className="icon-button" aria-label={t("Search conversation")}><Search size={18} /></button><button className="icon-button" aria-label={t("Conversation options")}><MoreHorizontal size={20} /></button><button className="icon-button profile-quick-button" type="button" onClick={() => setProfileOpen(true)} aria-label={t("Open my profile")} title={t("My profile")}><UserRound size={18} /><span>{t("Profile")}</span></button></div>
           </header>
-          <div className="messages-area">
-            <div className="conversation-intro"><div className="intro-avatar"><Avatar name={selectedPerson.name} size="large" /></div><h3>{selectedPerson.name}</h3><span>@{selectedPerson.username}</span><p>{t("This is the beginning of your conversation.")}</p></div>
-            {loadingMessages ? <div className="message-loading">{t("Opening your conversation…")}</div> : messages.map((message, index) => {
-              const own = message.senderId === session.user.id;
-              const previous = messages[index - 1];
-              const showDate = !previous || new Date(message.createdAt).toDateString() !== new Date(previous.createdAt).toDateString();
-              return <div key={message.id}>{showDate && <div className="date-divider"><span>{formatDay(message.createdAt)}</span></div>}<div className={`message-row ${own ? "own-message" : ""}`}>
-                {!own && <Avatar name={selectedPerson.name} size="tiny" />}
-                <div className="message-content"><div className="message-bubble">{message.content}</div><span className="message-meta">{formatTime(message.createdAt)} {own && <CheckCheck size={14} />}</span></div>
-              </div></div>;
-            })}
-            <div ref={messageEndRef} />
-          </div>
-          {error && <div className="inline-error" role="alert">{error}<button onClick={() => setError("")} aria-label={t("Dismiss error")}><X size={14} /></button></div>}
-          {canMessage ? <div className="composer-wrap"><form className="composer" onSubmit={sendMessage}><button type="button" className="icon-button composer-emoji" aria-label={t("Emoji")}><Smile size={19} /></button><textarea ref={inputRef} value={draft} onChange={(event) => { setDraft(event.target.value); event.currentTarget.style.height = "auto"; event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 120)}px`; }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={`${t("Write a message to")} ${selectedPerson.name.split(/\s+/)[0]}…`} maxLength={4000} rows={1} /><button type="submit" className="send-button" disabled={!draft.trim() || sending} aria-label={t("Send message")}>{sending ? <span className="send-loading" /> : <Send size={17} />}</button></form><div className="composer-hint"><span>{t("Keep it kind. Keep it you.")}</span><span><kbd>Enter</kbd> {t("to send")} <span className="hint-dot">·</span> <kbd>Shift + Enter</kbd> {t("for a new line")}</span></div></div> : <div className="messaging-disabled"><ShieldOff size={17} /><span>{session.user.messagingEnabled === false ? t("Messaging disabled for your account.") : <>{selectedPerson.name} {t("is not accepting messages right now.")}</>}</span></div>}
+          {selectedPerson.connectionStatus !== "connected" ? <div className="connection-gate">
+            <span className="welcome-icon"><LockKeyhole size={24} /></span>
+            {error && <div className="form-error" role="alert">{error}</div>}
+            {selectedPerson.connectionStatus === "received" ? <>
+              <h3>{selectedPerson.name} {t("wants to connect with you.")}</h3>
+              <p>{t("Accepting lets you exchange private messages.")}</p>
+              <div className="connection-actions">
+                <button className="primary-button" type="button" disabled={connectionBusy} onClick={() => updateConnection("accept")}>{connectionBusy ? t("Working…") : t("Accept connection")}</button>
+                <button className="connection-secondary" type="button" disabled={connectionBusy} onClick={() => updateConnection("decline")}>{t("Decline")}</button>
+              </div>
+            </> : selectedPerson.connectionStatus === "sent" ? <>
+              <h3>{t("Connect before chatting")}</h3>
+              <p>{t("Connection request sent. You can chat after they accept.")}</p>
+              <button className="connection-secondary" type="button" disabled={connectionBusy} onClick={() => updateConnection("cancel")}>{t("Cancel request")}</button>
+            </> : <>
+              <h3>{t("Connect before chatting")}</h3>
+              <p>{t("Send a connection request to start a private conversation.")}</p>
+              <button className="primary-button" type="button" disabled={connectionBusy} onClick={() => requestConnection(selectedPerson)}>{connectionBusy ? t("Working…") : t("Request connection")}</button>
+            </>}
+          </div> : <>
+            <div className="messages-area">
+              <div className="conversation-intro"><div className="intro-avatar"><Avatar name={selectedPerson.name} size="large" /></div><h3>{selectedPerson.name}</h3><span>@{selectedPerson.username}</span><p>{t("This is the beginning of your conversation.")}</p></div>
+              {loadingMessages ? <div className="message-loading">{t("Opening your conversation…")}</div> : messages.map((message, index) => {
+                const own = message.senderId === session.user.id;
+                const previous = messages[index - 1];
+                const showDate = !previous || new Date(message.createdAt).toDateString() !== new Date(previous.createdAt).toDateString();
+                return <div key={message.id}>{showDate && <div className="date-divider"><span>{formatDay(message.createdAt)}</span></div>}<div className={`message-row ${own ? "own-message" : ""}`}>
+                  {!own && <Avatar name={selectedPerson.name} size="tiny" />}
+                  <div className="message-content"><div className="message-bubble">{message.content}</div><span className="message-meta">{formatTime(message.createdAt)} {own && <CheckCheck size={14} />}</span></div>
+                </div></div>;
+              })}
+              <div ref={messageEndRef} />
+            </div>
+            {error && <div className="inline-error" role="alert">{error}<button onClick={() => setError("")} aria-label={t("Dismiss error")}><X size={14} /></button></div>}
+            {canMessage ? <div className="composer-wrap"><form className="composer" onSubmit={sendMessage}><button type="button" className="icon-button composer-emoji" aria-label={t("Emoji")}><Smile size={19} /></button><textarea ref={inputRef} value={draft} onChange={(event) => { setDraft(event.target.value); event.currentTarget.style.height = "auto"; event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 120)}px`; }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={`${t("Write a message to")} ${selectedPerson.name.split(/\s+/)[0]}…`} maxLength={4000} rows={1} /><button type="submit" className="send-button" disabled={!draft.trim() || sending} aria-label={t("Send message")}>{sending ? <span className="send-loading" /> : <Send size={17} />}</button></form><div className="composer-hint"><span>{t("Keep it kind. Keep it you.")}</span><span><kbd>Enter</kbd> {t("to send")} <span className="hint-dot">·</span> <kbd>Shift + Enter</kbd> {t("for a new line")}</span></div></div> : <div className="messaging-disabled"><ShieldOff size={17} /><span>{session.user.messagingEnabled === false ? t("Messaging disabled for your account.") : <>{selectedPerson.name} {t("is not accepting messages right now.")}</>}</span></div>}
+          </>}
         </>}
       </section>
       <div className="toast-area" aria-live="polite">{!selectedPerson && !selectedGroup && error && <div className="toast-error">{error}<button onClick={() => setError("")}><X size={14} /></button></div>}</div>
@@ -1145,7 +1476,7 @@ export default function App() {
           <header className="settings-header"><div><span className="welcome-tag">{t("YOUR COMMUNITY")}</span><h2 id="create-group-title">{t("Create a group")}</h2></div><button className="icon-button" onClick={() => setCreateGroupOpen(false)} aria-label={t("Close create group")}><X size={19} /></button></header>
           <form className="profile-edit-form" onSubmit={createGroup}>
             <label>{t("Group name")}<input value={groupName} onChange={(event) => setGroupName(event.target.value)} minLength={2} maxLength={80} required placeholder={t("e.g. Weekend plans")} /></label>
-            <label className="privacy-choice"><input type="checkbox" checked={groupIsPrivate} onChange={(event) => setGroupIsPrivate(event.target.checked)} /><span><strong>{t("Private group")}</strong><small>{t("Only members can find and open this group. Only you can add members.")}</small></span></label>
+            <p className="group-privacy-note">{t("Only members can find and open this group. Only you can add members.")}</p>
             {error && <div className="form-error" role="alert">{error}</div>}
             <button className="primary-button profile-save" disabled={creatingGroup}>{creatingGroup ? t("Creating…") : t("Create group")}</button>
           </form>

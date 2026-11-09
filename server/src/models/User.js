@@ -39,6 +39,8 @@ const userSchema = new mongoose.Schema(
     passwordHash: { type: String, required: true, select: false },
     messagingEnabled: { type: Boolean, default: true },
     isAdmin: { type: Boolean, default: false },
+    lastLoginAt: { type: Date, default: null },
+    loginCount: { type: Number, default: 0, min: 0 },
   },
   { timestamps: true }
 );

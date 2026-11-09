@@ -4,6 +4,7 @@ import Group from "../models/Group.js";
 import GroupMessage from "../models/GroupMessage.js";
 import User from "../models/User.js";
 import { requireAdult, requireAuth } from "../middleware/auth.js";
+import { createNotification, createNotifications } from "../services/notifications.js";
 
 function serializeGroup(group, userId) {
   const isMember = group.members.some((member) => member._id.toString() === userId);
@@ -11,7 +12,7 @@ function serializeGroup(group, userId) {
     id: group._id.toString(),
     name: group.name,
     createdBy: group.createdBy.toString(),
-    isPrivate: group.isPrivate,
+    isPrivate: true,
     isMember,
     memberCount: group.members.length,
     members: isMember ? group.members.map((member) => ({
@@ -40,9 +41,7 @@ export default function createGroupRouter(io) {
 
   router.get("/", async (req, res, next) => {
     try {
-      const groups = await Group.find({
-        $or: [{ members: req.userId }, { isPrivate: false }],
-      })
+      const groups = await Group.find({ members: req.userId })
         .populate("members", "name username")
         .sort({ updatedAt: -1 })
         .lean();
@@ -58,6 +57,9 @@ export default function createGroupRouter(io) {
       if (name.length < 2 || name.length > 80) {
         return res.status(400).json({ message: "Group name must be between 2 and 80 characters." });
       }
+      if (req.body.isPrivate === false) {
+        return res.status(400).json({ message: "Groups are only visible to members." });
+      }
       if (req.body.isPrivate !== undefined && typeof req.body.isPrivate !== "boolean") {
         return res.status(400).json({ message: "Choose whether this group should be private." });
       }
@@ -65,32 +67,10 @@ export default function createGroupRouter(io) {
         name,
         createdBy: req.userId,
         members: [req.userId],
-        isPrivate: req.body.isPrivate !== false,
+        isPrivate: true,
       });
       await group.populate("members", "name username");
       return res.status(201).json({ group: serializeGroup(group, req.userId) });
-    } catch (error) {
-      return next(error);
-    }
-  });
-
-  router.post("/:groupId/join", async (req, res, next) => {
-    try {
-      if (!mongoose.isValidObjectId(req.params.groupId)) {
-        return res.status(400).json({ message: "Invalid group." });
-      }
-      const group = await Group.findById(req.params.groupId);
-      if (!group || group.isPrivate) {
-        return res.status(404).json({ message: "Public group not found." });
-      }
-      group.members.addToSet(req.userId);
-      await group.save();
-      await group.populate("members", "name username");
-      const responseGroup = serializeGroup(group, req.userId);
-      for (const member of group.members) {
-        io.to(member._id.toString()).emit("group:updated", responseGroup);
-      }
-      return res.json({ group: responseGroup });
     } catch (error) {
       return next(error);
     }
@@ -102,11 +82,8 @@ export default function createGroupRouter(io) {
       if (!mongoose.isValidObjectId(groupId)) {
         return res.status(400).json({ message: "Invalid group." });
       }
-      const group = await Group.findById(groupId);
+      const group = await Group.findOne({ _id: groupId, createdBy: req.userId });
       if (!group) return res.status(404).json({ message: "Group not found." });
-      if (group.createdBy.toString() !== req.userId) {
-        return res.status(403).json({ message: "Only the group creator can add members." });
-      }
       const identifier = typeof req.body.identifier === "string" ? req.body.identifier.trim().toLowerCase() : "";
       if (!identifier) return res.status(400).json({ message: "Enter a username or five-digit ID." });
       const query = /^\d{5}$/.test(identifier) ? { userCode: identifier } : { username: identifier };
@@ -124,6 +101,15 @@ export default function createGroupRouter(io) {
       await group.save();
       await group.populate("members", "name username");
       const responseGroup = serializeGroup(group, req.userId);
+      await createNotification(io, {
+        recipient: user._id,
+        sender: req.userId,
+        type: "group_added",
+        title: "Added to a group",
+        body: `You were added to ${group.name}.`,
+        targetType: "group",
+        targetId: group._id,
+      });
       io.to(user.id).emit("group:added", responseGroup);
       for (const member of group.members) {
         if (!member.equals(user._id)) io.to(member.toString()).emit("group:updated", responseGroup);
@@ -143,11 +129,11 @@ export default function createGroupRouter(io) {
       if (typeof req.body.isPrivate !== "boolean") {
         return res.status(400).json({ message: "Choose whether this group should be private." });
       }
-      const group = await Group.findById(groupId);
-      if (!group) return res.status(404).json({ message: "Group not found." });
-      if (group.createdBy.toString() !== req.userId) {
-        return res.status(403).json({ message: "Only the group creator can change group privacy." });
+      if (!req.body.isPrivate) {
+        return res.status(400).json({ message: "Groups are only visible to members." });
       }
+      const group = await Group.findOne({ _id: groupId, createdBy: req.userId });
+      if (!group) return res.status(404).json({ message: "Group not found." });
       group.isPrivate = req.body.isPrivate;
       await group.save();
       await group.populate("members", "name username");
@@ -192,7 +178,7 @@ export default function createGroupRouter(io) {
       }
       const [group, sender] = await Promise.all([
         Group.findOne({ _id: groupId, members: req.userId }),
-        User.findById(req.userId).select("name messagingEnabled"),
+        User.findById(req.userId).select("name username messagingEnabled"),
       ]);
       if (!group) return res.status(404).json({ message: "Group not found." });
       if (!sender || sender.messagingEnabled === false) {
@@ -201,6 +187,17 @@ export default function createGroupRouter(io) {
       const message = await GroupMessage.create({ group: groupId, sender: req.userId, content });
       await message.populate("sender", "name");
       const responseMessage = serializeGroupMessage(message);
+      await createNotifications(io, group.members
+        .filter((memberId) => memberId.toString() !== req.userId)
+        .map((memberId) => ({
+          recipient: memberId,
+          sender: req.userId,
+          type: "group_message",
+          title: `New message in ${group.name}`,
+          body: `${sender.name} sent a group message.`,
+          targetType: "group",
+          targetId: group._id,
+        })));
       for (const memberId of group.members) {
         if (memberId.toString() !== req.userId) {
           io.to(memberId.toString()).emit("group:message:new", responseMessage);

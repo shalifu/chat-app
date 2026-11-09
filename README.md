@@ -1,10 +1,10 @@
 # Ububiko
 
-Ububiko is a small one-to-one chat app built with React, Express, Socket.IO, and MongoDB. People can create accounts, see other registered people, and exchange messages in real time.
+Ububiko is a chat app built with React, Express, Socket.IO, and MongoDB. People can create accounts and find public accounts, but one-to-one messaging starts only after the recipient accepts a connection request. Private accounts can be requested by five-digit ID. Group chats are visible only to their members; only the group creator can add members.
 
 Accounts must be registered with an age of 15 or older and a unique username. Email is used for account sign-in, but email verification is not required.
 
-Public accounts can be searched by username. Private accounts are hidden from the directory; people add them using their five-digit ID, shown under **Profile & settings**. Profile settings include display-name/password editing, account privacy, desktop notifications, dark mode, and language selection in English or Kinyarwanda (English by default). Groups can be public or private; only the creator can add members or change group privacy. Private groups are invite-only.
+Public accounts can be searched by username. Private accounts are hidden from the directory; people can send a connection request using the five-digit ID shown under **Profile & settings**. A conversation becomes available only after the recipient accepts. The notification inbox keeps message, connection, and group alerts so they can be opened later. Profile settings include display-name/password editing, account privacy, desktop notifications, dark mode, and language selection in English or Kinyarwanda (English by default). Groups are private and member-only; only the creator can add members.
 
 ## Requirements
 
@@ -44,6 +44,8 @@ The client uses `VITE_API_URL` when set; otherwise, it connects to `http://local
    npm.cmd run make-admin --prefix server -- admin@example.com
    ```
 
-3. Sign out and sign back in. Choose **Admin dashboard** in the sidebar.
+3. Sign in through the normal email/password login and choose **Admin dashboard** in the sidebar. Admin access is a role on the existing account; no shared or hard-coded admin password is used.
 
-The dashboard lists accounts, usernames, ages, and private-account status, and lets administrators enable or disable messaging for each person. The API enforces the setting for both senders and recipients. Admin roles are stored on the account and can only be granted from the server command line.
+The dashboard lists accounts and registration/login/last-active details; reports sign-ins, messages, server uptime, currently active users, and estimated time spent with the app open; and lets administrators disable messaging or delete non-admin accounts and their associated data. Admin APIs enforce authorization on the server. Admin accounts cannot be deleted from the dashboard, and admin roles can only be granted from the server command line.
+
+Usage tracking starts when this version is deployed. Time is estimated from visible app sessions and periodic heartbeats; earlier usage is not available.

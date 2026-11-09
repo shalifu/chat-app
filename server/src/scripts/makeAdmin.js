@@ -1,6 +1,7 @@
 import "dotenv/config";
 import mongoose from "mongoose";
 import User from "../models/User.js";
+import connectDB from "../config/db.js";
 
 const email =
   typeof process.argv[2] === "string" ? process.argv[2].trim().toLowerCase() : "";
@@ -10,8 +11,7 @@ if (!email) {
   process.exitCode = 1;
 } else {
   try {
-    const mongoUri = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/ububiko";
-    await mongoose.connect(mongoUri);
+    await connectDB();
     const user = await User.findOneAndUpdate(
       { email },
       { $set: { isAdmin: true } },

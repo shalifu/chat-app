@@ -110,6 +110,9 @@ router.post("/login", async (req, res, next) => {
     if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
       return res.status(401).json({ message: "Email or password is incorrect." });
     }
+    user.lastLoginAt = new Date();
+    user.loginCount = (user.loginCount || 0) + 1;
+    await user.save();
     return res.json({ token: createToken(user), user: publicUser(user) });
   } catch (error) {
     return next(error);

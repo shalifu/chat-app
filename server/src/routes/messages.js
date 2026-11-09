@@ -1,5 +1,6 @@
 import { Router } from "express";
 import mongoose from "mongoose";
+import Connection from "../models/Connection.js";
 import Message from "../models/Message.js";
 import User from "../models/User.js";
 import { requireAdult, requireAuth } from "../middleware/auth.js";
@@ -25,20 +26,25 @@ router.get("/:userId", requireAuth, requireAdult, async (req, res, next) => {
     if (userId === req.userId) {
       return res.status(400).json({ message: "You cannot start a conversation with yourself." });
     }
-    const [person, currentUser] = await Promise.all([
-      User.findById(userId).select("isPrivate +privateContacts"),
-      User.findById(req.userId).select("isPrivate +privateContacts"),
+    const [person, connection, currentUser, legacyContact] = await Promise.all([
+      User.findById(userId).select("isPrivate"),
+      Connection.findOne({
+        status: "accepted",
+        $or: [
+          { memberA: req.userId, memberB: userId },
+          { memberA: userId, memberB: req.userId },
+        ],
+      }),
+      User.findById(req.userId).select("+privateContacts"),
+      User.findById(userId).select("+privateContacts"),
     ]);
     if (!person) {
       return res.status(404).json({ message: "User not found." });
     }
-    const privateConversation = person.isPrivate || currentUser.isPrivate;
-    if (
-      privateConversation &&
-      (!person.privateContacts.some((contact) => contact.equals(req.userId)) ||
-        !currentUser.privateContacts.some((contact) => contact.equals(userId)))
-    ) {
-      return res.status(403).json({ message: "Add each other by five-digit ID before opening this private conversation." });
+    const legacyConnection = currentUser?.privateContacts.some((contact) => contact.equals(userId)) &&
+      legacyContact?.privateContacts.some((contact) => contact.equals(req.userId));
+    if (!connection && !legacyConnection) {
+      return res.status(403).json({ message: "Accept a connection request before opening this conversation." });
     }
 
     const messages = await Message.find({

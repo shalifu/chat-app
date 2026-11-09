@@ -6,12 +6,16 @@ import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import { Server } from "socket.io";
 import authRoutes from "./routes/auth.js";
-import userRoutes from "./routes/users.js";
+import createUserRouter from "./routes/users.js";
 import adminRoutes from "./routes/admin.js";
 import messageRoutes, { serializeMessage } from "./routes/messages.js";
 import createGroupRouter from "./routes/groups.js";
+import activityRoutes from "./routes/activity.js";
+import notificationRoutes from "./routes/notifications.js";
 import Message from "./models/Message.js";
+import Connection from "./models/Connection.js";
 import User from "./models/User.js";
+import { createNotification } from "./services/notifications.js";
 import { requireAdult, requireAuth } from "./middleware/auth.js";
 import connectDB from "./config/db.js";
 
@@ -32,10 +36,12 @@ app.use(cors({ origin: clientUrl }));
 app.use(express.json({ limit: "10kb" }));
 app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
 app.use("/api/auth", authRoutes);
-app.use("/api/users", userRoutes);
-app.use("/api/admin", adminRoutes);
+app.use("/api/users", createUserRouter(io));
+app.use("/api/admin", adminRoutes(io));
 app.use("/api/messages", messageRoutes);
 app.use("/api/groups", createGroupRouter(io));
+app.use("/api/activity", activityRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 app.post("/api/messages", requireAuth, requireAdult, async (req, res, next) => {
   try {
@@ -51,9 +57,16 @@ app.post("/api/messages", requireAuth, requireAdult, async (req, res, next) => {
     if (!content || content.length > 4000) {
       return res.status(400).json({ message: "Message must be between 1 and 4000 characters." });
     }
-    const [sender, recipient] = await Promise.all([
-      User.findById(req.userId).select("messagingEnabled isPrivate +privateContacts"),
-      User.findById(recipientId).select("messagingEnabled isPrivate +privateContacts"),
+    const [sender, recipient, connection] = await Promise.all([
+      User.findById(req.userId).select("name username messagingEnabled +privateContacts"),
+      User.findById(recipientId).select("messagingEnabled +privateContacts"),
+      Connection.findOne({
+        status: "accepted",
+        $or: [
+          { memberA: req.userId, memberB: recipientId },
+          { memberA: recipientId, memberB: req.userId },
+        ],
+      }),
     ]);
     if (!sender || !recipient) {
       return res.status(404).json({ message: "That account could not be found." });
@@ -64,12 +77,10 @@ app.post("/api/messages", requireAuth, requireAdult, async (req, res, next) => {
     if (recipient.messagingEnabled === false) {
       return res.status(403).json({ message: "This person is not accepting messages right now." });
     }
-    if (
-      (sender.isPrivate || recipient.isPrivate) &&
-      (!sender.privateContacts.some((contact) => contact.equals(recipientId)) ||
-        !recipient.privateContacts.some((contact) => contact.equals(req.userId)))
-    ) {
-      return res.status(403).json({ message: "Add each other by five-digit ID before messaging this private account." });
+    const legacyConnection = sender.privateContacts.some((contact) => contact.equals(recipientId)) &&
+      recipient.privateContacts.some((contact) => contact.equals(req.userId));
+    if (!connection && !legacyConnection) {
+      return res.status(403).json({ message: "Accept a connection request before sending a message." });
     }
 
     const message = await Message.create({
@@ -78,6 +89,15 @@ app.post("/api/messages", requireAuth, requireAdult, async (req, res, next) => {
       content,
     });
     const responseMessage = serializeMessage(message);
+    await createNotification(io, {
+      recipient: recipientId,
+      sender: req.userId,
+      type: "direct_message",
+      title: `New message from ${sender.name}`,
+      body: "Open your notifications to view it.",
+      targetType: "person",
+      targetId: req.userId,
+    });
     io.to(recipientId).emit("message:new", responseMessage);
     return res.status(201).json({ message: responseMessage });
   } catch (error) {
