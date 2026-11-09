@@ -17,6 +17,29 @@ function initialQuality() {
   return "Excellent";
 }
 
+function mediaAccessError(error, video) {
+  const errorName = error?.name || "";
+  const errorMessage = error?.message?.toLowerCase() || "";
+  if (
+    errorName === "NotAllowedError" ||
+    errorName === "PermissionDeniedError" ||
+    errorName === "SecurityError" ||
+    errorMessage.includes("permission denied")
+  ) {
+    if (!window.isSecureContext) {
+      return "Calls require a secure HTTPS connection. Open the chat using its HTTPS address, or use localhost for development.";
+    }
+    return `Allow ${video ? "microphone and camera" : "microphone"} access for this site in your browser and device settings, then try again.`;
+  }
+  if (errorName === "NotFoundError" || errorName === "DevicesNotFoundError") {
+    return `No ${video ? "microphone or camera" : "microphone"} was found. Connect or enable a device, then try again.`;
+  }
+  if (errorName === "NotReadableError" || errorName === "TrackStartError") {
+    return "Your microphone or camera is busy or unavailable. Close other apps using it, then try again.";
+  }
+  return error?.message || "Could not access your microphone or camera.";
+}
+
 export default function useCall(socket, token, onIncomingCall) {
   const [call, setCall] = useState(null);
   const [localStream, setLocalStream] = useState(null);
@@ -155,10 +178,15 @@ export default function useCall(socket, token, onIncomingCall) {
       : networkQuality === "Good"
         ? { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 24, max: 30 } }
         : { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 30 } };
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      video: video ? videoConstraints : false,
-    });
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        video: video ? videoConstraints : false,
+      });
+    } catch (error) {
+      throw new Error(mediaAccessError(error, video));
+    }
     localStreamRef.current = stream;
     setLocalStream(stream);
     return stream;
@@ -178,9 +206,16 @@ export default function useCall(socket, token, onIncomingCall) {
       incoming: false,
     };
     try {
-      const iceServers = await loadIceServers();
-      if (callRef.current) return;
       preparedStream = await prepareMedia(video);
+      if (callRef.current) {
+        preparedStream.getTracks().forEach((track) => track.stop());
+        if (localStreamRef.current === preparedStream) {
+          localStreamRef.current = null;
+          setLocalStream(null);
+        }
+        return;
+      }
+      const iceServers = await loadIceServers();
       if (callRef.current) {
         preparedStream.getTracks().forEach((track) => track.stop());
         if (localStreamRef.current === preparedStream) {
@@ -219,16 +254,31 @@ export default function useCall(socket, token, onIncomingCall) {
     if (!activeCall?.incoming || activeCall.status !== "incoming" || !socket?.connected) return;
     setCallError("");
     publishCall({ ...activeCall, status: "answering" });
+    let stream = null;
     try {
-      const preparingResult = await new Promise((resolve, reject) => {
+      const preparingPromise = new Promise((resolve, reject) => {
         socket.emit("call:preparing", { callId: activeCall.callId }, (result) => {
           if (result?.ok) resolve(result);
           else reject(new Error(result?.message || "This call is no longer available."));
         });
       });
-      if (!preparingResult?.ok || callRef.current?.callId !== activeCall.callId) return;
+      const mediaPromise = prepareMedia(activeCall.video);
+      const results = await Promise.allSettled([preparingPromise, mediaPromise]);
+      const preparingResult = results[0];
+      const mediaResult = results[1];
+      if (mediaResult.status === "fulfilled") stream = mediaResult.value;
+      const failedResult = results.find((result) => result.status === "rejected");
+      if (failedResult) throw failedResult.reason;
+      if (callRef.current?.callId !== activeCall.callId) {
+        stream.getTracks().forEach((track) => track.stop());
+        if (localStreamRef.current === stream) {
+          localStreamRef.current = null;
+          setLocalStream(null);
+        }
+        return;
+      }
+      if (!preparingResult.value?.ok) throw new Error("This call is no longer available.");
       const iceServers = await loadIceServers();
-      const stream = await prepareMedia(activeCall.video);
       if (callRef.current?.callId !== activeCall.callId) {
         stream.getTracks().forEach((track) => track.stop());
         if (localStreamRef.current === stream) {
@@ -246,8 +296,15 @@ export default function useCall(socket, token, onIncomingCall) {
         }
       });
     } catch (error) {
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+        if (localStreamRef.current === stream) {
+          localStreamRef.current = null;
+          setLocalStream(null);
+        }
+      }
       if (callRef.current?.callId === activeCall.callId) {
-        setCallError(error.message || "Could not access your microphone or camera.");
+        setCallError(error.message || mediaAccessError(error, activeCall.video));
         publishCall({ ...activeCall, status: "incoming" });
       }
     }
