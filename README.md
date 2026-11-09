@@ -13,6 +13,8 @@ Accepted connections can start one-to-one audio or video calls from the conversa
 
 The server issues short-lived TURN credentials to authenticated users. Leave both settings blank to use STUN only.
 
+In direct and group conversations, senders can edit or delete their own messages for up to 10 minutes after sending. Edits are saved for all participants and marked **Edited**; deleting a message removes it for everyone. The server enforces the time limit.
+
 ## Requirements
 
 - Node.js 18 or newer

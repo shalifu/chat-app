@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, lazy, Suspense, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { Phone, Video } from "lucide-react";
 import CallOverlay from "./CallOverlay.jsx";
@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const messageActionWindowMs = 10 * 60 * 1000;
 const LanguageContext = createContext((value) => value);
 const kinyarwanda = {
   "YOUR SPACE, YOUR PEOPLE": "AHANTU HAWE, ABANTU BAWE",
@@ -213,6 +214,14 @@ const kinyarwanda = {
   "Working…": "Birimo gukora…",
   "Dismiss error": "Funga ubutumwa bw'ikosa",
   "Send message": "Ohereza ubutumwa",
+  "Active now": "Ari kuri interineti ubu",
+  "Edited": "Byahinduwe",
+  "Edit": "Hindura",
+  "Delete": "Siba",
+  "Save": "Bika",
+  "Cancel": "Reka",
+  "Delete this message for everyone?": "Siba ubu butumwa ku bantu bose?",
+  "Edit message": "Hindura ubutumwa",
   "Message": "Ubutumwa",
   "Joining…": "Birimo kwinjira…",
   "Private": "Byihariye",
@@ -294,10 +303,154 @@ function formatDateTime(date) {
 
 function Avatar({ name, size = "normal", online = false }) {
   return (
-    <div className={`avatar avatar-${size}`} aria-label={name}>
+    <div className={`avatar avatar-${size}`} aria-label={online ? `${name} (active now)` : name} title={online ? `${name} is active now` : undefined}>
       <span>{getInitials(name)}</span>
       {online && <i className="online-dot" />}
     </div>
+  );
+}
+
+function canChangeMessage(createdAt) {
+  const age = Date.now() - new Date(createdAt).getTime();
+  return Number.isFinite(age) && age >= 0 && age < messageActionWindowMs;
+}
+
+function MessageItem({ message, own, avatarName, senderName, onEdit, onDelete }) {
+  const t = useT();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(message.content);
+  const [busy, setBusy] = useState(false);
+  const [withinActionWindow, setWithinActionWindow] = useState(() => own && canChangeMessage(message.createdAt));
+
+  useEffect(() => {
+    if (!own) return undefined;
+    const expiresIn = new Date(message.createdAt).getTime() + messageActionWindowMs - Date.now();
+    if (expiresIn <= 0) {
+      setWithinActionWindow(false);
+      setEditing(false);
+      return undefined;
+    }
+    const timeoutId = window.setTimeout(() => {
+      setWithinActionWindow(false);
+      setEditing(false);
+    }, expiresIn);
+    return () => window.clearTimeout(timeoutId);
+  }, [message.createdAt, own]);
+
+  async function saveEdit(event) {
+    event.preventDefault();
+    const content = draft.trim();
+    if (!content || content === message.content || busy) return;
+    setBusy(true);
+    try {
+      if (await onEdit(message.id, content)) setEditing(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteMessage() {
+    if (busy || !window.confirm(t("Delete this message for everyone?"))) return;
+    setBusy(true);
+    try {
+      await onDelete(message.id);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <div className={`message-row ${own ? "own-message" : ""}`}>
+    {!own && <Avatar name={avatarName || senderName} size="tiny" />}
+    <div className="message-content">
+      {senderName && !own && <small className="group-sender-name">{senderName}</small>}
+      {editing ? <form className="message-edit-form" onSubmit={saveEdit}>
+        <textarea
+          autoFocus
+          value={draft}
+          maxLength={4000}
+          rows={Math.min(4, Math.max(1, draft.split("\n").length))}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              setDraft(message.content);
+              setEditing(false);
+            }
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }
+          }}
+          aria-label={t("Edit message")}
+        />
+        <span className="message-edit-actions">
+          <button type="submit" disabled={!draft.trim() || draft.trim() === message.content || busy}>{busy ? t("Working…") : t("Save")}</button>
+          <button type="button" disabled={busy} onClick={() => { setDraft(message.content); setEditing(false); }}>{t("Cancel")}</button>
+        </span>
+      </form> : <div className="message-bubble">{message.content}</div>}
+      {own && withinActionWindow && !editing && <div className="message-actions">
+        <button type="button" disabled={busy} onClick={() => { setDraft(message.content); setEditing(true); }}>{t("Edit")}</button>
+        <button type="button" disabled={busy} onClick={deleteMessage}>{t("Delete")}</button>
+      </div>}
+      <span className="message-meta">
+        {formatTime(message.createdAt)} {message.editedAt && <span className="message-edited">{t("Edited")}</span>}
+        {own && <CheckCheck size={14} />}
+      </span>
+    </div>
+  </div>;
+}
+
+const EmojiPalette = lazy(() => import("./EmojiPalette.jsx"));
+
+function EmojiPicker({ value, onChange, textareaRef }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const pickerRef = useRef(null);
+
+  useEffect(() => {
+    function onPointerDown(event) {
+      if (open && !pickerRef.current?.contains(event.target)) setOpen(false);
+    }
+    function onKeyDown(event) {
+      if (open && event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  function insertEmoji(emoji) {
+    const textarea = textareaRef.current;
+    const start = textarea?.selectionStart ?? value.length;
+    const end = textarea?.selectionEnd ?? start;
+    const nextValue = `${value.slice(0, start)}${emoji}${value.slice(end)}`;
+    if (nextValue.length > 4000) return;
+    onChange(nextValue);
+    setOpen(false);
+    requestAnimationFrame(() => {
+      textarea?.focus();
+      textarea?.setSelectionRange(start + emoji.length, start + emoji.length);
+    });
+  }
+
+  return (
+    <span className="composer-emoji-wrap" ref={pickerRef}>
+      <button
+        type="button"
+        className="icon-button composer-emoji"
+        aria-label={t("Emoji")}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => setOpen((current) => !current)}
+      ><Smile size={19} /></button>
+      {open && <Suspense fallback={<span className="emoji-picker-loading" role="status">{t("Loading emojis…")}</span>}>
+        <EmojiPalette onSelect={insertEmoji} />
+      </Suspense>}
+    </span>
   );
 }
 
@@ -556,7 +709,7 @@ function WelcomePanel({ user, people }) {
   );
 }
 
-function GroupChatPanel({ group, session, messages, onMessagesLoaded, onMessage, onGroupUpdated, onGoBack, onOpenProfile }) {
+function GroupChatPanel({ group, session, messages, onMessagesLoaded, onMessage, onMessageUpdated, onMessageDeleted, onGroupUpdated, onGoBack, onOpenProfile }) {
   const t = useT();
   const [draft, setDraft] = useState("");
   const [identifier, setIdentifier] = useState("");
@@ -565,6 +718,7 @@ function GroupChatPanel({ group, session, messages, onMessagesLoaded, onMessage,
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const endRef = useRef(null);
+  const inputRef = useRef(null);
 
   useEffect(() => {
     let active = true;
@@ -606,6 +760,37 @@ function GroupChatPanel({ group, session, messages, onMessagesLoaded, onMessage,
     }
   }
 
+  async function editGroupMessage(messageId, content) {
+    setError("");
+    try {
+      const { message } = await api(`/groups/${group.id}/messages/${messageId}`, {
+        token: session.token,
+        method: "PATCH",
+        body: JSON.stringify({ content }),
+      });
+      onMessageUpdated(message);
+      return true;
+    } catch (requestError) {
+      setError(requestError.message);
+      return false;
+    }
+  }
+
+  async function deleteGroupMessage(messageId) {
+    setError("");
+    try {
+      await api(`/groups/${group.id}/messages/${messageId}`, {
+        token: session.token,
+        method: "DELETE",
+      });
+      onMessageDeleted(group.id, messageId);
+      return true;
+    } catch (requestError) {
+      setError(requestError.message);
+      return false;
+    }
+  }
+
   async function addMember(event) {
     event.preventDefault();
     if (!identifier.trim() || busy) return;
@@ -642,15 +827,18 @@ function GroupChatPanel({ group, session, messages, onMessagesLoaded, onMessage,
             const own = message.senderId === session.user.id;
             const previous = messages[index - 1];
             const showDate = !previous || new Date(message.createdAt).toDateString() !== new Date(previous.createdAt).toDateString();
-            return <div key={message.id}>{showDate && <div className="date-divider"><span>{formatDay(message.createdAt)}</span></div>}<div className={`message-row ${own ? "own-message" : ""}`}>
-              {!own && <Avatar name={message.senderName} size="tiny" />}
-              <div className="message-content">{!own && <small className="group-sender-name">{message.senderName}</small>}<div className="message-bubble">{message.content}</div><span className="message-meta">{formatTime(message.createdAt)} {own && <CheckCheck size={14} />}</span></div>
-            </div></div>;
+            return <div key={message.id}>{showDate && <div className="date-divider"><span>{formatDay(message.createdAt)}</span></div>}<MessageItem
+              message={message}
+              own={own}
+              senderName={message.senderName}
+              onEdit={editGroupMessage}
+              onDelete={deleteGroupMessage}
+            /></div>;
           })}
           <div ref={endRef} />
         </div>
         {error && <div className="inline-error" role="alert">{error}<button onClick={() => setError("")} aria-label={t("Dismiss error")}><X size={14} /></button></div>}
-        <div className="composer-wrap"><form className="composer" onSubmit={send}><textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={`${t("Message")} ${group.name}…`} maxLength={4000} rows={1} /><button type="submit" className="send-button" disabled={!draft.trim() || sending} aria-label={t("Send message")}>{sending ? <span className="send-loading" /> : <Send size={17} />}</button></form></div>
+        <div className="composer-wrap"><form className="composer" onSubmit={send}><EmojiPicker value={draft} onChange={setDraft} textareaRef={inputRef} /><textarea ref={inputRef} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={`${t("Message")} ${group.name}…`} maxLength={4000} rows={1} /><button type="submit" className="send-button" disabled={!draft.trim() || sending} aria-label={t("Send message")}>{sending ? <span className="send-loading" /> : <Send size={17} />}</button></form></div>
       </> : <div className="group-join-state"><h3>{t("Group not found.")}</h3></div>}
     </div>
   );
@@ -849,6 +1037,7 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem("ububiko-dark-mode") === "true");
   const [notificationsEnabled, setNotificationsEnabled] = useState(() => localStorage.getItem("ububiko-notifications") === "true");
   const [socket, setSocket] = useState(null);
+  const [onlineUsers, setOnlineUsers] = useState(() => new Set());
   const messageEndRef = useRef(null);
   const inputRef = useRef(null);
   const selectedIdRef = useRef(selectedId);
@@ -861,7 +1050,13 @@ export default function App() {
   const selectedGroup = groups.find((group) => group.id === selectedGroupId);
   const notificationsRef = useRef(notifications);
   notificationsRef.current = notifications;
-  const callManager = useCall(socket, session?.token);
+  const callManager = useCall(socket, session?.token, (invite) => {
+    setSelectedGroupId(null);
+    setSelectedId(invite.fromId);
+    setAdminView(false);
+    setMobileChat(true);
+    setError("");
+  });
 
   useEffect(() => {
     if (session) localStorage.setItem("ububiko-session", JSON.stringify(session));
@@ -993,8 +1188,57 @@ export default function App() {
 
   useEffect(() => {
     if (!session) return undefined;
-    const socket = io(API_URL, { auth: { token: session.token } });
+    const socket = io(API_URL, { auth: { token: session.token }, autoConnect: false });
+    let connectedOnce = false;
     setSocket(socket);
+    socket.on("connect", () => {
+      socket.emit("presence:list", (userIds) => {
+        if (Array.isArray(userIds)) setOnlineUsers(new Set(userIds));
+      });
+      if (connectedOnce) {
+        const groupId = selectedGroupIdRef.current;
+        const personId = selectedIdRef.current;
+        if (groupId) {
+          api(`/groups/${groupId}/messages`, { token: session.token })
+            .then(({ messages: loaded }) => {
+              setGroupMessages((current) => {
+                const combined = new Map([
+                  ...(current[groupId] || []).map((message) => [message.id, message]),
+                  ...loaded.map((message) => [message.id, message]),
+                ]);
+                return {
+                  ...current,
+                  [groupId]: [...combined.values()].sort(
+                    (first, second) => new Date(first.createdAt) - new Date(second.createdAt)
+                  ),
+                };
+              });
+            })
+            .catch((requestError) => setError(requestError.message));
+        } else if (personId) {
+          api(`/messages/${personId}`, { token: session.token })
+            .then(({ messages: loaded }) => {
+              setMessages((current) => {
+                if (selectedIdRef.current !== personId || selectedGroupIdRef.current) return current;
+                const combined = new Map([...current, ...loaded].map((message) => [message.id, message]));
+                return [...combined.values()].sort(
+                  (first, second) => new Date(first.createdAt) - new Date(second.createdAt)
+                );
+              });
+            })
+            .catch((requestError) => setError(requestError.message));
+        }
+      }
+      connectedOnce = true;
+    });
+    socket.on("presence:update", ({ userId, online }) => {
+      setOnlineUsers((current) => {
+        const next = new Set(current);
+        if (online) next.add(userId);
+        else next.delete(userId);
+        return next;
+      });
+    });
     socket.on("message:new", (message) => {
       if (message.recipientId !== session.user.id) return;
       if (message.senderId === selectedIdRef.current && !selectedGroupIdRef.current) {
@@ -1003,6 +1247,12 @@ export default function App() {
         setUnreadPeople((current) => ({ ...current, [message.senderId]: (current[message.senderId] || 0) + 1 }));
         notifyMessage(t("New message"), message.content);
       }
+    });
+    socket.on("message:updated", (message) => {
+      setMessages((current) => current.map((item) => item.id === message.id ? message : item));
+    });
+    socket.on("message:deleted", ({ messageId }) => {
+      setMessages((current) => current.filter((item) => item.id !== messageId));
     });
     socket.on("group:message:new", (message) => {
       if (message.groupId === selectedGroupIdRef.current) {
@@ -1016,6 +1266,22 @@ export default function App() {
         setUnreadGroups((current) => ({ ...current, [message.groupId]: (current[message.groupId] || 0) + 1 }));
         notifyMessage(`${t("Message from")} ${message.senderName}`, message.content);
       }
+    });
+    socket.on("group:message:updated", (message) => {
+      setGroupMessages((current) => current[message.groupId]
+        ? {
+          ...current,
+          [message.groupId]: current[message.groupId].map((item) => item.id === message.id ? message : item),
+        }
+        : current);
+    });
+    socket.on("group:message:deleted", ({ groupId, messageId }) => {
+      setGroupMessages((current) => current[groupId]
+        ? {
+          ...current,
+          [groupId]: current[groupId].filter((item) => item.id !== messageId),
+        }
+        : current);
     });
     socket.on("group:added", (group) => {
       setGroups((current) => current.some((item) => item.id === group.id)
@@ -1042,6 +1308,7 @@ export default function App() {
       setSession(null);
     });
     socket.on("connect_error", () => setError("Live connection lost. Please refresh to reconnect."));
+    socket.connect();
     return () => {
       setSocket((current) => current === socket ? null : current);
       socket.disconnect();
@@ -1293,6 +1560,34 @@ export default function App() {
     }
   }
 
+  async function editDirectMessage(messageId, content) {
+    setError("");
+    try {
+      const { message } = await api(`/messages/${messageId}`, {
+        token: session.token,
+        method: "PATCH",
+        body: JSON.stringify({ content }),
+      });
+      setMessages((current) => current.map((item) => item.id === message.id ? message : item));
+      return true;
+    } catch (requestError) {
+      setError(requestError.message);
+      return false;
+    }
+  }
+
+  async function deleteDirectMessage(messageId) {
+    setError("");
+    try {
+      await api(`/messages/${messageId}`, { token: session.token, method: "DELETE" });
+      setMessages((current) => current.filter((item) => item.id !== messageId));
+      return true;
+    } catch (requestError) {
+      setError(requestError.message);
+      return false;
+    }
+  }
+
   const canMessage = session?.user.messagingEnabled !== false && selectedPerson?.messagingEnabled !== false;
   const notifyMessage = (title, body) => {
     if (notificationsEnabledRef.current && document.visibilityState === "hidden" && "Notification" in window && Notification.permission === "granted") {
@@ -1365,6 +1660,21 @@ export default function App() {
     }));
   }
 
+  function groupMessageUpdated(message) {
+    setGroupMessages((current) => current[message.groupId]
+      ? {
+        ...current,
+        [message.groupId]: current[message.groupId].map((item) => item.id === message.id ? message : item),
+      }
+      : current);
+  }
+
+  function groupMessageDeleted(groupId, messageId) {
+    setGroupMessages((current) => current[groupId]
+      ? { ...current, [groupId]: current[groupId].filter((item) => item.id !== messageId) }
+      : current);
+  }
+
   if (!session) return <LanguageContext.Provider value={language}><AuthScreen onAuthenticated={handleAuthenticated} darkMode={darkMode} onToggleDarkMode={toggleDarkMode} /></LanguageContext.Provider>;
   if (Number.isInteger(session.user.age) && session.user.age < 15) {
     return <LanguageContext.Provider value={language}><main className="age-blocked"><ThemeToggle darkMode={darkMode} onToggle={toggleDarkMode} /><h1>{t("Ububiko is for ages 15 and older")}</h1><p>{t("This account cannot use the app.")}</p><button className="primary-button" onClick={signOut}>{t("Sign out")}</button></main></LanguageContext.Provider>;
@@ -1420,7 +1730,7 @@ export default function App() {
           {loadingPeople ? <div className="list-state">{t("Finding your people…")}</div> : filteredPeople.length ? filteredPeople.map((person) => {
             const lastMessage = messages.find((message) => message.senderId === person.id || message.recipientId === person.id);
             return <button key={person.id} className={`person-row ${person.id === selectedId ? "selected" : ""}`} onClick={() => { setAdminView(false); setSelectedGroupId(null); setSelectedId(person.id); setUnreadPeople((current) => ({ ...current, [person.id]: 0 })); setMobileChat(true); setError(""); }}>
-              <Avatar name={person.name} size="normal" />
+              <Avatar name={person.name} size="normal" online={onlineUsers.has(person.id)} />
               <span className="person-info"><span className="person-name">{person.name}</span><span className={`person-preview ${person.connectionStatus === "received" ? "connection-preview" : ""}`}>{person.connectionStatus === "received" ? t("Connection request") : person.connectionStatus === "sent" ? t("Request sent") : person.messagingEnabled === false ? t("Messaging disabled") : person.isPrivate ? t("Private account") : `@${person.username}`}</span></span>
               {unreadPeople[person.id] > 0 && <span className="unread-badge">{unreadPeople[person.id]}</span>}
               {lastMessage && <span className="person-time">{formatTime(lastMessage.createdAt)}</span>}
@@ -1441,14 +1751,16 @@ export default function App() {
             return { ...current, [groupId]: [...combined.values()].sort((first, second) => new Date(first.createdAt) - new Date(second.createdAt)) };
           })}
           onMessage={groupMessageAdded}
+          onMessageUpdated={groupMessageUpdated}
+          onMessageDeleted={groupMessageDeleted}
           onGroupUpdated={updateGroup}
           onGoBack={() => setMobileChat(false)}
           onOpenProfile={() => setProfileOpen(true)}
         /> : !selectedPerson ? <WelcomePanel user={session.user} people={people} /> : <>
           <header className="chat-header">
             <button className="icon-button back-button" aria-label="Back to people" onClick={() => setMobileChat(false)}><ArrowLeft size={19} /></button>
-            <Avatar name={selectedPerson.name} />
-            <div className="chat-person"><h2>{selectedPerson.name}</h2><span>{selectedPerson.isPrivate ? <><LockKeyhole size={12} /> {t("Private account")}</> : `@${selectedPerson.username}`}</span></div>
+            <Avatar name={selectedPerson.name} online={onlineUsers.has(selectedPerson.id)} />
+            <div className="chat-person"><h2>{selectedPerson.name}</h2><span>{onlineUsers.has(selectedPerson.id) && <><i className="status-dot" /> {t("Active now")} · </>}{selectedPerson.isPrivate ? <><LockKeyhole size={12} /> {t("Private account")}</> : `@${selectedPerson.username}`}</span></div>
             <div className="chat-actions">
               {selectedPerson.connectionStatus === "connected" && session.user.messagingEnabled !== false && selectedPerson.messagingEnabled !== false && <>
                 <button className="icon-button call-action-button" type="button" disabled={!!callManager.call || !socket?.connected} onClick={() => callManager.startCall(selectedPerson, false)} aria-label={`Start audio call with ${selectedPerson.name}`} title="Audio call"><Phone size={17} /></button>
@@ -1483,15 +1795,18 @@ export default function App() {
                 const own = message.senderId === session.user.id;
                 const previous = messages[index - 1];
                 const showDate = !previous || new Date(message.createdAt).toDateString() !== new Date(previous.createdAt).toDateString();
-                return <div key={message.id}>{showDate && <div className="date-divider"><span>{formatDay(message.createdAt)}</span></div>}<div className={`message-row ${own ? "own-message" : ""}`}>
-                  {!own && <Avatar name={selectedPerson.name} size="tiny" />}
-                  <div className="message-content"><div className="message-bubble">{message.content}</div><span className="message-meta">{formatTime(message.createdAt)} {own && <CheckCheck size={14} />}</span></div>
-                </div></div>;
+                return <div key={message.id}>{showDate && <div className="date-divider"><span>{formatDay(message.createdAt)}</span></div>}<MessageItem
+                  message={message}
+                  own={own}
+                  avatarName={selectedPerson.name}
+                  onEdit={editDirectMessage}
+                  onDelete={deleteDirectMessage}
+                /></div>;
               })}
               <div ref={messageEndRef} />
             </div>
             {error && <div className="inline-error" role="alert">{error}<button onClick={() => setError("")} aria-label={t("Dismiss error")}><X size={14} /></button></div>}
-            {canMessage ? <div className="composer-wrap"><form className="composer" onSubmit={sendMessage}><button type="button" className="icon-button composer-emoji" aria-label={t("Emoji")}><Smile size={19} /></button><textarea ref={inputRef} value={draft} onChange={(event) => { setDraft(event.target.value); event.currentTarget.style.height = "auto"; event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 120)}px`; }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={`${t("Write a message to")} ${selectedPerson.name.split(/\s+/)[0]}…`} maxLength={4000} rows={1} /><button type="submit" className="send-button" disabled={!draft.trim() || sending} aria-label={t("Send message")}>{sending ? <span className="send-loading" /> : <Send size={17} />}</button></form><div className="composer-hint"><span>{t("Keep it kind. Keep it you.")}</span><span><kbd>Enter</kbd> {t("to send")} <span className="hint-dot">·</span> <kbd>Shift + Enter</kbd> {t("for a new line")}</span></div></div> : <div className="messaging-disabled"><ShieldOff size={17} /><span>{session.user.messagingEnabled === false ? t("Messaging disabled for your account.") : <>{selectedPerson.name} {t("is not accepting messages right now.")}</>}</span></div>}
+            {canMessage ? <div className="composer-wrap"><form className="composer" onSubmit={sendMessage}><EmojiPicker value={draft} onChange={setDraft} textareaRef={inputRef} /><textarea ref={inputRef} value={draft} onChange={(event) => { setDraft(event.target.value); event.currentTarget.style.height = "auto"; event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 120)}px`; }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={`${t("Write a message to")} ${selectedPerson.name.split(/\s+/)[0]}…`} maxLength={4000} rows={1} /><button type="submit" className="send-button" disabled={!draft.trim() || sending} aria-label={t("Send message")}>{sending ? <span className="send-loading" /> : <Send size={17} />}</button></form><div className="composer-hint"><span>{t("Keep it kind. Keep it you.")}</span><span><kbd>Enter</kbd> {t("to send")} <span className="hint-dot">·</span> <kbd>Shift + Enter</kbd> {t("for a new line")}</span></div></div> : <div className="messaging-disabled"><ShieldOff size={17} /><span>{session.user.messagingEnabled === false ? t("Messaging disabled for your account.") : <>{selectedPerson.name} {t("is not accepting messages right now.")}</>}</span></div>}
           </>}
         </>}
       </section>

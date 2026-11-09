@@ -13,6 +13,7 @@ const messageSchema = new mongoose.Schema(
       required: true,
     },
     content: { type: String, required: true, trim: true, maxlength: 4000 },
+    editedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

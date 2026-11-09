@@ -6,6 +6,8 @@ import User from "../models/User.js";
 import { requireAdult, requireAuth } from "../middleware/auth.js";
 import { createNotification, createNotifications } from "../services/notifications.js";
 
+const messageActionWindowMs = 10 * 60 * 1000;
+
 function serializeGroup(group, userId) {
   const isMember = group.members.some((member) => member._id.toString() === userId);
   return {
@@ -32,6 +34,7 @@ function serializeGroupMessage(message) {
     senderName: message.sender.name,
     content: message.content,
     createdAt: message.createdAt,
+    editedAt: message.editedAt || null,
   };
 }
 
@@ -204,6 +207,73 @@ export default function createGroupRouter(io) {
         }
       }
       return res.status(201).json({ message: responseMessage });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  router.patch("/:groupId/messages/:messageId", async (req, res, next) => {
+    try {
+      const { groupId, messageId } = req.params;
+      const content = typeof req.body.content === "string" ? req.body.content.trim() : "";
+      if (!mongoose.isValidObjectId(groupId) || !mongoose.isValidObjectId(messageId)) {
+        return res.status(400).json({ message: "Invalid group or message." });
+      }
+      if (!content || content.length > 4000) {
+        return res.status(400).json({ message: "Message must be between 1 and 4000 characters." });
+      }
+      const group = await Group.findOne({ _id: groupId, members: req.userId }).select("members");
+      if (!group) return res.status(404).json({ message: "Group not found." });
+      const cutoff = new Date(Date.now() - messageActionWindowMs);
+      const message = await GroupMessage.findOneAndUpdate(
+        { _id: messageId, group: groupId, sender: req.userId, createdAt: { $gte: cutoff } },
+        { $set: { content, editedAt: new Date() } },
+        { new: true, runValidators: true }
+      ).populate("sender", "name");
+      if (!message) {
+        const ownedMessage = await GroupMessage.exists({ _id: messageId, group: groupId, sender: req.userId });
+        if (ownedMessage) {
+          return res.status(403).json({ message: "Messages can only be edited or deleted within 10 minutes of sending." });
+        }
+        return res.status(404).json({ message: "Message not found or you cannot edit it." });
+      }
+      const responseMessage = serializeGroupMessage(message);
+      for (const memberId of group.members) {
+        io.to(memberId.toString()).emit("group:message:updated", responseMessage);
+      }
+      return res.json({ message: responseMessage });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  router.delete("/:groupId/messages/:messageId", async (req, res, next) => {
+    try {
+      const { groupId, messageId } = req.params;
+      if (!mongoose.isValidObjectId(groupId) || !mongoose.isValidObjectId(messageId)) {
+        return res.status(400).json({ message: "Invalid group or message." });
+      }
+      const group = await Group.findOne({ _id: groupId, members: req.userId }).select("members");
+      if (!group) return res.status(404).json({ message: "Group not found." });
+      const cutoff = new Date(Date.now() - messageActionWindowMs);
+      const message = await GroupMessage.findOneAndDelete({
+        _id: messageId,
+        group: groupId,
+        sender: req.userId,
+        createdAt: { $gte: cutoff },
+      });
+      if (!message) {
+        const ownedMessage = await GroupMessage.exists({ _id: messageId, group: groupId, sender: req.userId });
+        if (ownedMessage) {
+          return res.status(403).json({ message: "Messages can only be edited or deleted within 10 minutes of sending." });
+        }
+        return res.status(404).json({ message: "Message not found or you cannot delete it." });
+      }
+      const response = { groupId, messageId: message._id.toString() };
+      for (const memberId of group.members) {
+        io.to(memberId.toString()).emit("group:message:deleted", response);
+      }
+      return res.json({ messageId: response.messageId });
     } catch (error) {
       return next(error);
     }

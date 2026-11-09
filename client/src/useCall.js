@@ -17,7 +17,7 @@ function initialQuality() {
   return "Excellent";
 }
 
-export default function useCall(socket, token) {
+export default function useCall(socket, token, onIncomingCall) {
   const [call, setCall] = useState(null);
   const [localStream, setLocalStream] = useState(null);
   const [remoteStream, setRemoteStream] = useState(null);
@@ -30,6 +30,8 @@ export default function useCall(socket, token) {
   const localStreamRef = useRef(null);
   const pendingCandidatesRef = useRef([]);
   const qualityTimerRef = useRef(null);
+  const onIncomingCallRef = useRef(onIncomingCall);
+  onIncomingCallRef.current = onIncomingCall;
 
   const publishCall = useCallback((nextCall) => {
     callRef.current = nextCall;
@@ -165,6 +167,8 @@ export default function useCall(socket, token) {
   const startCall = useCallback(async (person, video) => {
     if (!socket?.connected || callRef.current) return;
     setCallError("");
+    let preparedStream = null;
+    let publishedCall = false;
     const nextCall = {
       callId: crypto.randomUUID(),
       peerId: person.id,
@@ -175,28 +179,64 @@ export default function useCall(socket, token) {
     };
     try {
       const iceServers = await loadIceServers();
-      await prepareMedia(video);
-      publishCall(nextCall);
-      createPeerConnection(nextCall, iceServers);
-      socket.emit("call:invite", { callId: nextCall.callId, to: person.id, video }, (result) => {
-        if (!result?.ok) {
-          setCallError(result?.message || "The call could not be started.");
-          endCall(false);
+      if (callRef.current) return;
+      preparedStream = await prepareMedia(video);
+      if (callRef.current) {
+        preparedStream.getTracks().forEach((track) => track.stop());
+        if (localStreamRef.current === preparedStream) {
+          localStreamRef.current = null;
+          setLocalStream(null);
         }
+        return;
+      }
+      publishCall(nextCall);
+      publishedCall = true;
+      const inviteResult = await new Promise((resolve, reject) => {
+        socket.emit("call:invite", { callId: nextCall.callId, to: person.id, video }, (result) => {
+          if (result?.ok) resolve(result);
+          else reject(new Error(result?.message || "The call could not be started."));
+        });
       });
+      if (!inviteResult?.ok || callRef.current?.callId !== nextCall.callId) return;
+      createPeerConnection(nextCall, iceServers);
     } catch (error) {
-      stopMedia();
-      setCallError(error.message || "Could not access your microphone or camera.");
+      if (callRef.current?.callId === nextCall.callId) {
+        endCall();
+        setCallError(error.message || "Could not access your microphone or camera.");
+      } else if (preparedStream && localStreamRef.current === preparedStream) {
+        preparedStream.getTracks().forEach((track) => track.stop());
+        localStreamRef.current = null;
+        setLocalStream(null);
+      }
+      if (!publishedCall && !callRef.current) {
+        setCallError(error.message || "Could not access your microphone or camera.");
+      }
     }
   }, [createPeerConnection, endCall, loadIceServers, prepareMedia, publishCall, socket, stopMedia]);
 
   const answerCall = useCallback(async () => {
     const activeCall = callRef.current;
-    if (!activeCall?.incoming || !socket?.connected) return;
+    if (!activeCall?.incoming || activeCall.status !== "incoming" || !socket?.connected) return;
     setCallError("");
+    publishCall({ ...activeCall, status: "answering" });
     try {
+      const preparingResult = await new Promise((resolve, reject) => {
+        socket.emit("call:preparing", { callId: activeCall.callId }, (result) => {
+          if (result?.ok) resolve(result);
+          else reject(new Error(result?.message || "This call is no longer available."));
+        });
+      });
+      if (!preparingResult?.ok || callRef.current?.callId !== activeCall.callId) return;
       const iceServers = await loadIceServers();
-      await prepareMedia(activeCall.video);
+      const stream = await prepareMedia(activeCall.video);
+      if (callRef.current?.callId !== activeCall.callId) {
+        stream.getTracks().forEach((track) => track.stop());
+        if (localStreamRef.current === stream) {
+          localStreamRef.current = null;
+          setLocalStream(null);
+        }
+        return;
+      }
       createPeerConnection(activeCall, iceServers);
       publishCall({ ...activeCall, status: "connecting" });
       socket.emit("call:accept", { callId: activeCall.callId }, (result) => {
@@ -206,7 +246,10 @@ export default function useCall(socket, token) {
         }
       });
     } catch (error) {
-      setCallError(error.message || "Could not access your microphone or camera.");
+      if (callRef.current?.callId === activeCall.callId) {
+        setCallError(error.message || "Could not access your microphone or camera.");
+        publishCall({ ...activeCall, status: "incoming" });
+      }
     }
   }, [createPeerConnection, endCall, loadIceServers, prepareMedia, publishCall, socket]);
 
@@ -247,6 +290,7 @@ export default function useCall(socket, token) {
         status: "incoming",
         incoming: true,
       });
+      onIncomingCallRef.current?.(invite);
     };
     const onAccepted = async ({ callId }) => {
       const activeCall = callRef.current;
@@ -262,6 +306,11 @@ export default function useCall(socket, token) {
         setCallError(error.message || "Could not start the call.");
         endCall();
       }
+    };
+    const onPreparing = ({ callId }) => {
+      const activeCall = callRef.current;
+      if (!activeCall || activeCall.callId !== callId || activeCall.incoming) return;
+      publishCall({ ...activeCall, status: "answering" });
     };
     const onOffer = async ({ callId, description }) => {
       const activeCall = callRef.current;
@@ -310,6 +359,7 @@ export default function useCall(socket, token) {
       if (callRef.current?.callId !== callId) return;
       if (reason === "timeout") setCallError("No answer. The call invitation expired.");
       else if (reason === "busy") setCallError("This person is already on another call.");
+      else if (reason === "disconnected") setCallError("The other person's connection was lost. The call has ended.");
       endCall(false);
     };
     const onCallRejected = ({ callId }) => {
@@ -326,6 +376,7 @@ export default function useCall(socket, token) {
 
     socket.on("call:incoming", onIncoming);
     socket.on("call:accepted", onAccepted);
+    socket.on("call:preparing", onPreparing);
     socket.on("call:offer", onOffer);
     socket.on("call:answer", onAnswer);
     socket.on("call:candidate", onCandidate);
@@ -335,6 +386,7 @@ export default function useCall(socket, token) {
     return () => {
       socket.off("call:incoming", onIncoming);
       socket.off("call:accepted", onAccepted);
+      socket.off("call:preparing", onPreparing);
       socket.off("call:offer", onOffer);
       socket.off("call:answer", onAnswer);
       socket.off("call:candidate", onCandidate);

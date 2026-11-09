@@ -9,7 +9,7 @@ import { Server } from "socket.io";
 import authRoutes from "./routes/auth.js";
 import createUserRouter from "./routes/users.js";
 import adminRoutes from "./routes/admin.js";
-import messageRoutes, { serializeMessage } from "./routes/messages.js";
+import createMessageRouter, { serializeMessage } from "./routes/messages.js";
 import createGroupRouter from "./routes/groups.js";
 import activityRoutes from "./routes/activity.js";
 import notificationRoutes from "./routes/notifications.js";
@@ -38,6 +38,37 @@ const io = new Server(httpServer, {
   cors: { origin: clientUrl, methods: ["GET", "POST"] },
 });
 const activeCalls = new Map();
+const onlineSockets = new Map();
+
+async function getVisibleUserIds(userId) {
+  const [user, connections, publicUsers] = await Promise.all([
+    User.findById(userId).select("+privateContacts"),
+    Connection.find({ $or: [{ memberA: userId }, { memberB: userId }] }).select("memberA memberB"),
+    User.find({ _id: { $ne: userId }, isPrivate: { $ne: true } }).select("_id"),
+  ]);
+  if (!user) return [];
+  const visibleIds = new Set(user.privateContacts.map((id) => id.toString()));
+  for (const connection of connections) {
+    visibleIds.add(connection.memberA.toString() === userId
+      ? connection.memberB.toString()
+      : connection.memberA.toString());
+  }
+  for (const publicUser of publicUsers) visibleIds.add(publicUser._id.toString());
+  return [...visibleIds];
+}
+
+async function announcePresence(userId, online) {
+  const user = await User.findById(userId).select("isPrivate");
+  if (!user) return;
+  if (!user.isPrivate) {
+    io.emit("presence:update", { userId, online });
+    return;
+  }
+  const visibleIds = await getVisibleUserIds(userId);
+  for (const visibleId of visibleIds) {
+    io.to(visibleId).emit("presence:update", { userId, online });
+  }
+}
 
 app.use(cors({ origin: clientUrl }));
 app.use(express.json({ limit: "10kb" }));
@@ -45,7 +76,7 @@ app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
 app.use("/api/auth", authRoutes);
 app.use("/api/users", createUserRouter(io));
 app.use("/api/admin", adminRoutes(io));
-app.use("/api/messages", messageRoutes);
+app.use("/api/messages", createMessageRouter(io));
 app.use("/api/groups", createGroupRouter(io));
 app.use("/api/activity", activityRoutes);
 app.use("/api/notifications", notificationRoutes);
@@ -148,6 +179,23 @@ io.use(async (socket, next) => {
 io.on("connection", (socket) => {
   const userId = socket.data.userId.toString();
   socket.join(userId);
+  const userSockets = onlineSockets.get(userId) || new Set();
+  userSockets.add(socket.id);
+  onlineSockets.set(userId, userSockets);
+  if (userSockets.size === 1) {
+    announcePresence(userId, true).catch((error) => console.error("Could not announce online status:", error));
+  }
+
+  socket.on("presence:list", async (callback) => {
+    if (typeof callback !== "function") return;
+    try {
+      const visibleIds = new Set(await getVisibleUserIds(userId));
+      callback([...onlineSockets.keys()].filter((onlineId) => visibleIds.has(onlineId)));
+    } catch (error) {
+      console.error("Could not load online status:", error);
+      callback([]);
+    }
+  });
 
   function finishCall(callId, reason = "ended") {
     const activeCall = activeCalls.get(callId);
@@ -209,7 +257,14 @@ io.on("connection", (socket) => {
         return;
       }
 
-      const activeCall = { callId, callerId: userId, calleeId: to, status: "ringing", timeout: null };
+      const activeCall = {
+        callId,
+        callerId: userId,
+        calleeId: to,
+        status: "ringing",
+        timeout: null,
+        queuedCandidates: [],
+      };
       activeCall.timeout = setTimeout(() => {
         if (activeCalls.get(callId) === activeCall) finishCall(callId, "timeout");
       }, 30000);
@@ -238,6 +293,28 @@ io.on("connection", (socket) => {
     activeCall.timeout = null;
     activeCall.status = "active";
     io.to(activeCall.callerId).emit("call:accepted", { callId: activeCall.callId });
+    for (const queuedCandidate of activeCall.queuedCandidates) {
+      io.to(queuedCandidate.to).emit("call:candidate", {
+        callId: activeCall.callId,
+        candidate: queuedCandidate.candidate,
+      });
+    }
+    activeCall.queuedCandidates = [];
+    acknowledge(callback, { ok: true });
+  });
+
+  socket.on("call:preparing", (rawPayload, callback) => {
+    const payload = readPayload(rawPayload);
+    const activeCall = activeCalls.get(payload.callId);
+    if (!activeCall || activeCall.calleeId !== userId || activeCall.status !== "ringing") {
+      acknowledge(callback, { ok: false, message: "This call is no longer available." });
+      return;
+    }
+    clearTimeout(activeCall.timeout);
+    activeCall.timeout = setTimeout(() => {
+      if (activeCalls.get(activeCall.callId) === activeCall) finishCall(activeCall.callId, "timeout");
+    }, 90000);
+    io.to(activeCall.callerId).emit("call:preparing", { callId: activeCall.callId });
     acknowledge(callback, { ok: true });
   });
 
@@ -260,7 +337,7 @@ io.on("connection", (socket) => {
   function relayCallSignal(eventName, rawPayload, callback) {
     const payload = readPayload(rawPayload);
     const activeCall = activeCalls.get(payload.callId);
-    if (!activeCall || activeCall.status !== "active") {
+    if (!activeCall) {
       acknowledge(callback, { ok: false, message: "This call is no longer active." });
       return;
     }
@@ -283,6 +360,15 @@ io.on("connection", (socket) => {
     const serialized = JSON.stringify(payload.value);
     if (typeof serialized !== "string" || serialized.length > 100000) {
       acknowledge(callback, { ok: false, message: "Call signal is too large." });
+      return;
+    }
+    if (activeCall.status === "ringing" && eventName === "call:candidate") {
+      activeCall.queuedCandidates.push({ to: peerId, candidate: payload.value });
+      acknowledge(callback, { ok: true });
+      return;
+    }
+    if (activeCall.status !== "active") {
+      acknowledge(callback, { ok: false, message: "This call is not ready for signaling." });
       return;
     }
     io.to(peerId).emit(eventName, {
@@ -320,6 +406,12 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     for (const [callId, activeCall] of activeCalls) {
       if (activeCall.callerId === userId || activeCall.calleeId === userId) finishCall(callId, "disconnected");
+    }
+    const activeSockets = onlineSockets.get(userId);
+    activeSockets?.delete(socket.id);
+    if (activeSockets?.size === 0) {
+      onlineSockets.delete(userId);
+      announcePresence(userId, false).catch((error) => console.error("Could not announce offline status:", error));
     }
   });
 });
