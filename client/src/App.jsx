@@ -1,5 +1,8 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
+import { Phone, Video } from "lucide-react";
+import CallOverlay from "./CallOverlay.jsx";
+import useCall from "./useCall.js";
 import {
   ArrowLeft,
   ArrowUp,
@@ -298,7 +301,23 @@ function Avatar({ name, size = "normal", online = false }) {
   );
 }
 
-function AuthScreen({ onAuthenticated }) {
+function ThemeToggle({ darkMode, onToggle }) {
+  const t = useT();
+  return (
+    <button
+      className="theme-toggle"
+      type="button"
+      onClick={onToggle}
+      aria-label={t(darkMode ? "Switch to light mode" : "Switch to dark mode")}
+      title={t(darkMode ? "Switch to light mode" : "Switch to dark mode")}
+    >
+      {darkMode ? <Sun size={17} /> : <Moon size={17} />}
+      <span>{t(darkMode ? "Light mode" : "Dark mode")}</span>
+    </button>
+  );
+}
+
+function AuthScreen({ onAuthenticated, darkMode, onToggleDarkMode }) {
   const t = useT();
   const [mode, setMode] = useState("login");
   const [name, setName] = useState("");
@@ -333,6 +352,7 @@ function AuthScreen({ onAuthenticated }) {
 
   return (
     <main className="auth-page">
+      <ThemeToggle darkMode={darkMode} onToggle={onToggleDarkMode} />
       <div className="auth-art">
         <div className="art-glow" />
         <div className="auth-brand"><span className="brand-mark"><MessageCircle size={21} fill="currentColor" /></span> ububiko</div>
@@ -370,7 +390,7 @@ function AuthScreen({ onAuthenticated }) {
   );
 }
 
-function CompleteProfile({ session, onCompleted, onSignOut }) {
+function CompleteProfile({ session, onCompleted, onSignOut, darkMode, onToggleDarkMode }) {
   const t = useT();
   const [username, setUsername] = useState(session.user.username || "");
   const [age, setAge] = useState(session.user.age ? String(session.user.age) : "");
@@ -398,6 +418,7 @@ function CompleteProfile({ session, onCompleted, onSignOut }) {
 
   return (
     <main className="auth-page profile-setup-page">
+      <ThemeToggle darkMode={darkMode} onToggle={onToggleDarkMode} />
       <section className="profile-setup">
         <span className="welcome-tag">{t("ONE QUICK STEP")}</span>
         <h1>{t("Finish setting up")}</h1>
@@ -827,6 +848,7 @@ export default function App() {
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem("ububiko-dark-mode") === "true");
   const [notificationsEnabled, setNotificationsEnabled] = useState(() => localStorage.getItem("ububiko-notifications") === "true");
+  const [socket, setSocket] = useState(null);
   const messageEndRef = useRef(null);
   const inputRef = useRef(null);
   const selectedIdRef = useRef(selectedId);
@@ -839,11 +861,17 @@ export default function App() {
   const selectedGroup = groups.find((group) => group.id === selectedGroupId);
   const notificationsRef = useRef(notifications);
   notificationsRef.current = notifications;
+  const callManager = useCall(socket, session?.token);
 
   useEffect(() => {
     if (session) localStorage.setItem("ububiko-session", JSON.stringify(session));
     else localStorage.removeItem("ububiko-session");
   }, [session]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark-mode", darkMode);
+    document.documentElement.style.colorScheme = darkMode ? "dark" : "light";
+  }, [darkMode]);
 
   useEffect(() => {
     localStorage.setItem("ububiko-language", language);
@@ -966,6 +994,7 @@ export default function App() {
   useEffect(() => {
     if (!session) return undefined;
     const socket = io(API_URL, { auth: { token: session.token } });
+    setSocket(socket);
     socket.on("message:new", (message) => {
       if (message.recipientId !== session.user.id) return;
       if (message.senderId === selectedIdRef.current && !selectedGroupIdRef.current) {
@@ -1013,7 +1042,10 @@ export default function App() {
       setSession(null);
     });
     socket.on("connect_error", () => setError("Live connection lost. Please refresh to reconnect."));
-    return () => socket.disconnect();
+    return () => {
+      setSocket((current) => current === socket ? null : current);
+      socket.disconnect();
+    };
   }, [session, language]);
 
   useEffect(() => {
@@ -1333,12 +1365,12 @@ export default function App() {
     }));
   }
 
-  if (!session) return <LanguageContext.Provider value={language}><AuthScreen onAuthenticated={handleAuthenticated} /></LanguageContext.Provider>;
+  if (!session) return <LanguageContext.Provider value={language}><AuthScreen onAuthenticated={handleAuthenticated} darkMode={darkMode} onToggleDarkMode={toggleDarkMode} /></LanguageContext.Provider>;
   if (Number.isInteger(session.user.age) && session.user.age < 15) {
-    return <LanguageContext.Provider value={language}><main className="age-blocked"><h1>{t("Ububiko is for ages 15 and older")}</h1><p>{t("This account cannot use the app.")}</p><button className="primary-button" onClick={signOut}>{t("Sign out")}</button></main></LanguageContext.Provider>;
+    return <LanguageContext.Provider value={language}><main className="age-blocked"><ThemeToggle darkMode={darkMode} onToggle={toggleDarkMode} /><h1>{t("Ububiko is for ages 15 and older")}</h1><p>{t("This account cannot use the app.")}</p><button className="primary-button" onClick={signOut}>{t("Sign out")}</button></main></LanguageContext.Provider>;
   }
   if (!session.user.username || !Number.isInteger(session.user.age) || !session.user.userCode) {
-    return <LanguageContext.Provider value={language}><CompleteProfile session={session} onCompleted={setSession} onSignOut={signOut} /></LanguageContext.Provider>;
+    return <LanguageContext.Provider value={language}><CompleteProfile session={session} onCompleted={setSession} onSignOut={signOut} darkMode={darkMode} onToggleDarkMode={toggleDarkMode} /></LanguageContext.Provider>;
   }
 
   return (
@@ -1417,7 +1449,13 @@ export default function App() {
             <button className="icon-button back-button" aria-label="Back to people" onClick={() => setMobileChat(false)}><ArrowLeft size={19} /></button>
             <Avatar name={selectedPerson.name} />
             <div className="chat-person"><h2>{selectedPerson.name}</h2><span>{selectedPerson.isPrivate ? <><LockKeyhole size={12} /> {t("Private account")}</> : `@${selectedPerson.username}`}</span></div>
-            <div className="chat-actions"><button className="icon-button" aria-label={t("Search conversation")}><Search size={18} /></button><button className="icon-button" aria-label={t("Conversation options")}><MoreHorizontal size={20} /></button><button className="icon-button profile-quick-button" type="button" onClick={() => setProfileOpen(true)} aria-label={t("Open my profile")} title={t("My profile")}><UserRound size={18} /><span>{t("Profile")}</span></button></div>
+            <div className="chat-actions">
+              {selectedPerson.connectionStatus === "connected" && session.user.messagingEnabled !== false && selectedPerson.messagingEnabled !== false && <>
+                <button className="icon-button call-action-button" type="button" disabled={!!callManager.call || !socket?.connected} onClick={() => callManager.startCall(selectedPerson, false)} aria-label={`Start audio call with ${selectedPerson.name}`} title="Audio call"><Phone size={17} /></button>
+                <button className="icon-button call-action-button" type="button" disabled={!!callManager.call || !socket?.connected} onClick={() => callManager.startCall(selectedPerson, true)} aria-label={`Start video call with ${selectedPerson.name}`} title="Video call"><Video size={18} /></button>
+              </>}
+              <button className="icon-button" aria-label={t("Search conversation")}><Search size={18} /></button><button className="icon-button" aria-label={t("Conversation options")}><MoreHorizontal size={20} /></button><button className="icon-button profile-quick-button" type="button" onClick={() => setProfileOpen(true)} aria-label={t("Open my profile")} title={t("My profile")}><UserRound size={18} /><span>{t("Profile")}</span></button>
+            </div>
           </header>
           {selectedPerson.connectionStatus !== "connected" ? <div className="connection-gate">
             <span className="welcome-icon"><LockKeyhole size={24} /></span>
@@ -1458,6 +1496,21 @@ export default function App() {
         </>}
       </section>
       <div className="toast-area" aria-live="polite">{!selectedPerson && !selectedGroup && error && <div className="toast-error">{error}<button onClick={() => setError("")}><X size={14} /></button></div>}</div>
+      <CallOverlay
+        call={callManager.call}
+        localStream={callManager.localStream}
+        remoteStream={callManager.remoteStream}
+        muted={callManager.muted}
+        cameraEnabled={callManager.cameraEnabled}
+        quality={callManager.quality}
+        callError={callManager.callError}
+        onAnswer={callManager.answerCall}
+        onReject={callManager.rejectCall}
+        onEnd={callManager.endCall}
+        onToggleMute={callManager.toggleMute}
+        onToggleCamera={callManager.toggleCamera}
+        onDismissError={callManager.clearCallError}
+      />
       {profileOpen && <ProfileSettings
         session={session}
         onClose={() => setProfileOpen(false)}
