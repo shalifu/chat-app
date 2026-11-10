@@ -9,6 +9,7 @@ import {
   Activity,
   Bell,
   BellOff,
+  Check,
   CheckCheck,
   ChevronDown,
   CircleHelp,
@@ -33,6 +34,7 @@ import {
   UnlockKeyhole,
   UserRound,
   UsersRound,
+  Forward,
   X,
 } from "lucide-react";
 
@@ -81,6 +83,7 @@ const kinyarwanda = {
   "My profile": "Umwirondoro wanjye",
   "ACCOUNT SETTINGS": "IMITERERE YA KONTI",
   "Your profile": "Umwirondoro wawe",
+  "Connections": "Abo mwahuye",
   "Five-digit ID copied": "ID y'imibare itanu yakoporowe",
   "Your five-digit ID": "ID yawe y'imibare itanu",
   "Copy ID": "Koporora ID",
@@ -233,6 +236,17 @@ const kinyarwanda = {
   "Cancel": "Reka",
   "Delete this message for everyone?": "Siba ubu butumwa ku bantu bose?",
   "Edit message": "Hindura ubutumwa",
+  "Reply": "Subiza",
+  "Forward": "Ohereza ku wundi",
+  "Replying to": "Urasubiza",
+  "Cancel reply": "Reka gusubiza",
+  "Forward message": "Ohereza ubutumwa ku wundi",
+  "Forwarded from": "Byoherejwe mbere na",
+  "Choose a conversation": "Hitamo ikiganiro",
+  "Connect with someone before forwarding a message.": "Banza uhuze n'umuntu mbere yo kumwoherereza ubutumwa.",
+  "No conversations available to forward to.": "Nta biganiro bihari byo koherezamo ubutumwa.",
+  "SHARE A MESSAGE": "SANGIZA UBUTUMWA",
+  "a group member": "umunyamuryango w'itsinda",
   "Message": "Ubutumwa",
   "Joining…": "Birimo kwinjira…",
   "Private": "Byihariye",
@@ -277,6 +291,16 @@ async function api(path, { token, ...options } = {}) {
     throw error;
   }
   return data;
+}
+
+function updatePersonLastMessage(people, userId, createdAt) {
+  const timestamp = new Date(createdAt).getTime();
+  return people.map((person) => {
+    if (person.id !== userId || (person.lastMessageAt && new Date(person.lastMessageAt).getTime() >= timestamp)) {
+      return person;
+    }
+    return { ...person, lastMessageAt: createdAt };
+  });
 }
 
 function getInitials(name = "") {
@@ -326,7 +350,7 @@ function canChangeMessage(createdAt) {
   return Number.isFinite(age) && age >= 0 && age < messageActionWindowMs;
 }
 
-function MessageItem({ message, own, avatarName, senderName, onEdit, onDelete }) {
+function MessageItem({ message, own, avatarName, senderName, sourceType, onEdit, onDelete, onReply, onForward }) {
   const t = useT();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
@@ -367,7 +391,7 @@ function MessageItem({ message, own, avatarName, senderName, onEdit, onDelete })
       {!own && <Avatar name={avatarName || senderName} size="tiny" />}
       <div className="message-content">
         <div className="call-history-card">{icon}<span><strong>{callLabel}</strong><small>{outcome}{message.callStatus === "completed" ? duration : ""}</small></span></div>
-        <span className="message-meta">{formatTime(message.createdAt)} {own && <CheckCheck size={14} />}</span>
+        <span className="message-meta">{formatTime(message.createdAt)} {own && (message.seenAt ? <CheckCheck size={14} /> : <Check size={14} />)}</span>
       </div>
     </div>;
   }
@@ -398,6 +422,7 @@ function MessageItem({ message, own, avatarName, senderName, onEdit, onDelete })
     {!own && <Avatar name={avatarName || senderName} size="tiny" />}
     <div className="message-content">
       {senderName && !own && <small className="group-sender-name">{senderName}</small>}
+      {message.forwardedFrom && <div className="message-forwarded-label"><Forward size={12} /> {t("Forwarded from")} {message.forwardedFrom.senderName}</div>}
       {editing ? <form className="message-edit-form" onSubmit={saveEdit}>
         <textarea
           autoFocus
@@ -422,14 +447,21 @@ function MessageItem({ message, own, avatarName, senderName, onEdit, onDelete })
           <button type="submit" disabled={!draft.trim() || draft.trim() === message.content || busy}>{busy ? t("Working…") : t("Save")}</button>
           <button type="button" disabled={busy} onClick={() => { setDraft(message.content); setEditing(false); }}>{t("Cancel")}</button>
         </span>
-      </form> : <div className="message-bubble">{message.content}</div>}
-      {own && withinActionWindow && !editing && <div className="message-actions">
-        <button type="button" disabled={busy} onClick={() => { setDraft(message.content); setEditing(true); }}>{t("Edit")}</button>
-        <button type="button" disabled={busy} onClick={deleteMessage}>{t("Delete")}</button>
+      </form> : <div className="message-bubble">
+        {message.replyTo && <div className="message-reply-preview"><strong>{message.replyTo.senderName}</strong><span>{message.replyTo.content}</span></div>}
+        {message.content}
+      </div>}
+      {!editing && <div className="message-actions">
+        <button type="button" disabled={busy} onClick={() => onReply({ ...message, senderName: senderName || message.senderName, sourceType })}>{t("Reply")}</button>
+        <button type="button" disabled={busy} onClick={() => onForward({ ...message, senderName: senderName || message.senderName, sourceType })}>{t("Forward")}</button>
+        {own && withinActionWindow && <>
+          <button type="button" disabled={busy} onClick={() => { setDraft(message.content); setEditing(true); }}>{t("Edit")}</button>
+          <button type="button" disabled={busy} onClick={deleteMessage}>{t("Delete")}</button>
+        </>}
       </div>}
       <span className="message-meta">
         {formatTime(message.createdAt)} {message.editedAt && <span className="message-edited">{t("Edited")}</span>}
-        {own && <CheckCheck size={14} />}
+        {own && (message.seenAt ? <CheckCheck size={14} /> : <Check size={14} />)}
       </span>
     </div>
   </div>;
@@ -626,6 +658,7 @@ function CompleteProfile({ session, onCompleted, onSignOut, darkMode, onToggleDa
 
 function ProfileSettings({
   session,
+  connectedPeopleCount,
   onClose,
   onUpdated,
   darkMode,
@@ -694,6 +727,10 @@ function ProfileSettings({
           <strong className="settings-user-code">{session.user.userCode}</strong>
           <button type="button" className="settings-copy-button" onClick={copyId}><Copy size={14} /> {t("Copy ID")}</button>
         </div>
+        <div className="settings-connection-count">
+          <UsersRound size={17} />
+          <span><strong>{connectedPeopleCount}</strong><small>{t("Connections")}</small></span>
+        </div>
         <div className="settings-options">
           <button className="settings-option" type="button" onClick={onToggleDarkMode} aria-pressed={darkMode}>
             {darkMode ? <Sun size={17} /> : <Moon size={17} />}
@@ -744,7 +781,7 @@ function WelcomePanel({ user, people }) {
   );
 }
 
-function GroupChatPanel({ group, session, messages, onMessagesLoaded, onMessage, onMessageUpdated, onMessageDeleted, onGroupUpdated, onGoBack, onOpenProfile }) {
+function GroupChatPanel({ group, session, messages, onMessagesLoaded, onMessage, onMessageUpdated, onMessageDeleted, onGroupUpdated, onGoBack, onOpenProfile, onForward }) {
   const t = useT();
   const [draft, setDraft] = useState("");
   const [identifier, setIdentifier] = useState("");
@@ -752,6 +789,7 @@ function GroupChatPanel({ group, session, messages, onMessagesLoaded, onMessage,
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [replyTarget, setReplyTarget] = useState(null);
   const endRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -784,10 +822,14 @@ function GroupChatPanel({ group, session, messages, onMessagesLoaded, onMessage,
       const { message } = await api(`/groups/${group.id}/messages`, {
         token: session.token,
         method: "POST",
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({
+          content,
+          ...(replyTarget ? { replyTo: { messageId: replyTarget.id, sourceType: replyTarget.sourceType } } : {}),
+        }),
       });
       onMessage(message);
       setDraft("");
+      setReplyTarget(null);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -866,14 +908,20 @@ function GroupChatPanel({ group, session, messages, onMessagesLoaded, onMessage,
               message={message}
               own={own}
               senderName={message.senderName}
+              sourceType="group"
               onEdit={editGroupMessage}
               onDelete={deleteGroupMessage}
+              onReply={setReplyTarget}
+              onForward={onForward}
             /></div>;
           })}
           <div ref={endRef} />
         </div>
         {error && <div className="inline-error" role="alert">{error}<button onClick={() => setError("")} aria-label={t("Dismiss error")}><X size={14} /></button></div>}
-        <div className="composer-wrap"><form className="composer" onSubmit={send}><EmojiPicker value={draft} onChange={setDraft} textareaRef={inputRef} /><textarea ref={inputRef} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={`${t("Message")} ${group.name}…`} maxLength={4000} rows={1} /><button type="submit" className="send-button" disabled={!draft.trim() || sending} aria-label={t("Send message")}>{sending ? <span className="send-loading" /> : <Send size={17} />}</button></form></div>
+        <div className="composer-wrap">
+          {replyTarget && <div className="reply-composer-preview"><span><strong>{t("Replying to")} {replyTarget.senderName}</strong><small>{replyTarget.content}</small></span><button type="button" onClick={() => setReplyTarget(null)} aria-label={t("Cancel reply")}><X size={15} /></button></div>}
+          <form className="composer" onSubmit={send}><EmojiPicker value={draft} onChange={setDraft} textareaRef={inputRef} /><textarea ref={inputRef} value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={`${t("Message")} ${group.name}…`} maxLength={4000} rows={1} /><button type="submit" className="send-button" disabled={!draft.trim() || sending} aria-label={t("Send message")}>{sending ? <span className="send-loading" /> : <Send size={17} />}</button></form>
+        </div>
       </> : <div className="group-join-state"><h3>{t("Group not found.")}</h3></div>}
     </div>
   );
@@ -1049,6 +1097,10 @@ export default function App() {
   const [unreadGroups, setUnreadGroups] = useState({});
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState("");
+  const [replyTarget, setReplyTarget] = useState(null);
+  const [forwardTarget, setForwardTarget] = useState(null);
+  const [forwardBusy, setForwardBusy] = useState(false);
+  const [forwardError, setForwardError] = useState("");
   const [loadingPeople, setLoadingPeople] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [error, setError] = useState("");
@@ -1078,10 +1130,16 @@ export default function App() {
   const selectedIdRef = useRef(selectedId);
   const selectedGroupIdRef = useRef(selectedGroupId);
   const notificationsEnabledRef = useRef(notificationsEnabled);
+  const sessionRef = useRef(session);
+  const languageRef = useRef(language);
   selectedIdRef.current = selectedId;
   selectedGroupIdRef.current = selectedGroupId;
   notificationsEnabledRef.current = notificationsEnabled;
+  sessionRef.current = session;
+  languageRef.current = language;
   const selectedPerson = people.find((person) => person.id === selectedId);
+  const forwardablePeople = people.filter((person) => person.connectionStatus === "connected");
+  const connectedPeopleCount = people.filter((person) => person.connectionStatus === "connected").length;
   const selectedGroup = groups.find((group) => group.id === selectedGroupId);
   const notificationsRef = useRef(notifications);
   notificationsRef.current = notifications;
@@ -1118,6 +1176,10 @@ export default function App() {
       .finally(() => { if (active) setLoadingPeople(false); });
     return () => { active = false; };
   }, [session]);
+
+  useEffect(() => {
+    setReplyTarget(null);
+  }, [selectedId, selectedGroupId]);
 
   useEffect(() => {
     if (!session) return;
@@ -1222,8 +1284,9 @@ export default function App() {
   }, [session?.token]);
 
   useEffect(() => {
-    if (!session) return undefined;
-    const socket = io(API_URL, { auth: { token: session.token }, autoConnect: false });
+    const activeSession = sessionRef.current;
+    if (!activeSession) return undefined;
+    const socket = io(API_URL, { auth: { token: activeSession.token }, autoConnect: false });
     let connectedOnce = false;
     setSocket(socket);
     socket.on("connect", () => {
@@ -1234,7 +1297,7 @@ export default function App() {
         const groupId = selectedGroupIdRef.current;
         const personId = selectedIdRef.current;
         if (groupId) {
-          api(`/groups/${groupId}/messages`, { token: session.token })
+          api(`/groups/${groupId}/messages`, { token: activeSession.token })
             .then(({ messages: loaded }) => {
               setGroupMessages((current) => {
                 const combined = new Map([
@@ -1251,7 +1314,7 @@ export default function App() {
             })
             .catch((requestError) => setError(requestError.message));
         } else if (personId) {
-          api(`/messages/${personId}`, { token: session.token })
+          api(`/messages/${personId}`, { token: activeSession.token })
             .then(({ messages: loaded }) => {
               setMessages((current) => {
                 if (selectedIdRef.current !== personId || selectedGroupIdRef.current) return current;
@@ -1275,15 +1338,22 @@ export default function App() {
       });
     });
     socket.on("message:new", (message) => {
-      const currentUserId = session.user.id;
+      const currentUser = sessionRef.current?.user;
+      if (!currentUser) return;
+      const currentUserId = currentUser.id;
       const isParticipant = message.senderId === currentUserId || message.recipientId === currentUserId;
       if (!isParticipant) return;
       const otherUserId = message.senderId === currentUserId ? message.recipientId : message.senderId;
+      setPeople((current) => updatePersonLastMessage(current, otherUserId, message.createdAt));
       if (otherUserId === selectedIdRef.current && !selectedGroupIdRef.current) {
         setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
+        if (message.recipientId === currentUserId) {
+          markMessagesSeen(otherUserId);
+        }
       } else if (message.recipientId === currentUserId) {
         setUnreadPeople((current) => ({ ...current, [message.senderId]: (current[message.senderId] || 0) + 1 }));
-        notifyMessage(message.type === "call" ? t("Call history") : t("New message"), message.content);
+        const translatedTitle = languageRef.current === "rw" ? (kinyarwanda[message.type === "call" ? "Call history" : "New message"] || (message.type === "call" ? "Call history" : "New message")) : (message.type === "call" ? "Call history" : "New message");
+        notifyMessage(translatedTitle, message.content);
       }
     });
     socket.on("message:updated", (message) => {
@@ -1291,6 +1361,16 @@ export default function App() {
     });
     socket.on("message:deleted", ({ messageId }) => {
       setMessages((current) => current.filter((item) => item.id !== messageId));
+    });
+    socket.on("message:seen", ({ senderId, messageIds = [] }) => {
+      const currentUser = sessionRef.current?.user;
+      if (!messageIds.length || !currentUser || senderId !== currentUser.id) return;
+      const seenAt = new Date().toISOString();
+      setMessages((current) => current.map((item) =>
+        messageIds.includes(item.id) && item.senderId === currentUser.id
+          ? { ...item, seenAt }
+          : item
+      ));
     });
     socket.on("group:message:new", (message) => {
       if (message.groupId === selectedGroupIdRef.current) {
@@ -1302,7 +1382,8 @@ export default function App() {
         }));
       } else {
         setUnreadGroups((current) => ({ ...current, [message.groupId]: (current[message.groupId] || 0) + 1 }));
-        notifyMessage(`${t("Message from")} ${message.senderName}`, message.content);
+        const translatedTitle = languageRef.current === "rw" ? (kinyarwanda["Message from"] || "Message from") : "Message from";
+        notifyMessage(`${translatedTitle} ${message.senderName}`, message.content);
       }
     });
     socket.on("group:message:updated", (message) => {
@@ -1330,7 +1411,7 @@ export default function App() {
       setGroups((current) => current.map((item) => item.id === group.id ? group : item));
     });
     socket.on("connection:updated", () => {
-      api("/users", { token: session.token })
+      api("/users", { token: activeSession.token })
         .then(({ users }) => setPeople(users))
         .catch((requestError) => setError(requestError.message));
     });
@@ -1351,7 +1432,7 @@ export default function App() {
       setSocket((current) => current === socket ? null : current);
       socket.disconnect();
     };
-  }, [session, language]);
+  }, [session?.token]);
 
   useEffect(() => {
     if (!session || !selectedId || selectedPerson?.connectionStatus !== "connected") {
@@ -1374,10 +1455,12 @@ export default function App() {
           const uniqueMessages = new Map(
             [...loaded, ...currentConversation].map((message) => [message.id, message])
           );
-          return [...uniqueMessages.values()].sort(
+          const nextMessages = [...uniqueMessages.values()].sort(
             (first, second) => new Date(first.createdAt) - new Date(second.createdAt)
           );
+          return nextMessages;
         });
+        markMessagesSeen(selectedId);
       })
       .catch((requestError) => { if (active) setError(requestError.message); })
       .finally(() => { if (active) setLoadingMessages(false); });
@@ -1390,7 +1473,13 @@ export default function App() {
 
   const filteredPeople = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return people.filter((person) => !query || person.username?.toLowerCase().includes(query));
+    return people
+      .filter((person) => !query || person.username?.toLowerCase().includes(query))
+      .sort((first, second) => {
+        const firstTime = first.lastMessageAt ? new Date(first.lastMessageAt).getTime() : 0;
+        const secondTime = second.lastMessageAt ? new Date(second.lastMessageAt).getTime() : 0;
+        return secondTime - firstTime || first.name.localeCompare(second.name);
+      });
   }, [people, search]);
 
   function signOut() {
@@ -1410,6 +1499,34 @@ export default function App() {
   function handleAuthenticated(nextSession) {
     setSession(nextSession);
     setAdminView(nextSession.user.isAdmin === true);
+  }
+
+  async function markMessagesSeen(personId) {
+    const activeSession = sessionRef.current;
+    if (!activeSession || !personId) return false;
+    const pendingIds = messages.filter((message) =>
+      message.senderId === personId &&
+      message.recipientId === activeSession.user.id &&
+      !message.seenAt
+    ).map((message) => message.id);
+    if (!pendingIds.length) return false;
+    try {
+      const { messageIds } = await api(`/messages/${personId}/seen`, {
+        token: activeSession.token,
+        method: "PATCH",
+      });
+      if (!messageIds?.length) return false;
+      const seenAt = new Date().toISOString();
+      setMessages((current) => current.map((message) =>
+        message.senderId === personId && message.recipientId === activeSession.user.id && !message.seenAt && messageIds.includes(message.id)
+          ? { ...message, seenAt }
+          : message
+      ));
+      return true;
+    } catch (requestError) {
+      if (requestError.status !== 404) setError(requestError.message);
+      return false;
+    }
   }
 
   function updateManagedUser(updatedUser) {
@@ -1585,16 +1702,70 @@ export default function App() {
       const { message } = await api("/messages", {
         token: session.token,
         method: "POST",
-        body: JSON.stringify({ recipientId: selectedId, content }),
+        body: JSON.stringify({
+          recipientId: selectedId,
+          content,
+          ...(replyTarget ? { replyTo: { messageId: replyTarget.id, sourceType: replyTarget.sourceType } } : {}),
+        }),
       });
       setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
+      setPeople((current) => updatePersonLastMessage(current, selectedId, message.createdAt));
       setDraft("");
+      setReplyTarget(null);
       if (inputRef.current) inputRef.current.style.height = "auto";
       inputRef.current?.focus();
     } catch (requestError) {
       setError(requestError.message);
     } finally {
       setSending(false);
+    }
+  }
+
+  async function forwardToPerson(person) {
+    if (!forwardTarget || forwardBusy) return;
+    setForwardBusy(true);
+    setForwardError("");
+    try {
+      const { message } = await api("/messages", {
+        token: session.token,
+        method: "POST",
+        body: JSON.stringify({
+          recipientId: person.id,
+          content: forwardTarget.content,
+          forwardedFrom: { messageId: forwardTarget.id, sourceType: forwardTarget.sourceType },
+        }),
+      });
+      setPeople((current) => updatePersonLastMessage(current, person.id, message.createdAt));
+      if (selectedIdRef.current === person.id && !selectedGroupIdRef.current) {
+        setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
+      }
+      setForwardTarget(null);
+    } catch (requestError) {
+      setForwardError(requestError.message);
+    } finally {
+      setForwardBusy(false);
+    }
+  }
+
+  async function forwardToGroup(group) {
+    if (!forwardTarget || forwardBusy) return;
+    setForwardBusy(true);
+    setForwardError("");
+    try {
+      const { message } = await api(`/groups/${group.id}/messages`, {
+        token: session.token,
+        method: "POST",
+        body: JSON.stringify({
+          content: forwardTarget.content,
+          forwardedFrom: { messageId: forwardTarget.id, sourceType: forwardTarget.sourceType },
+        }),
+      });
+      groupMessageAdded(message);
+      setForwardTarget(null);
+    } catch (requestError) {
+      setForwardError(requestError.message);
+    } finally {
+      setForwardBusy(false);
     }
   }
 
@@ -1766,12 +1937,11 @@ export default function App() {
           </button>)}
           <div className="people-label people-subheading"><span>{t("PEOPLE")}</span></div>
           {loadingPeople ? <div className="list-state">{t("Finding your people…")}</div> : filteredPeople.length ? filteredPeople.map((person) => {
-            const lastMessage = messages.find((message) => message.senderId === person.id || message.recipientId === person.id);
             return <button key={person.id} className={`person-row ${person.id === selectedId ? "selected" : ""}`} onClick={() => { setAdminView(false); setSelectedGroupId(null); setSelectedId(person.id); setUnreadPeople((current) => ({ ...current, [person.id]: 0 })); setMobileChat(true); setError(""); }}>
               <Avatar name={person.name} size="normal" online={onlineUsers.has(person.id)} />
               <span className="person-info"><span className="person-name">{person.name}</span><span className={`person-preview ${person.connectionStatus === "received" ? "connection-preview" : ""}`}>{person.connectionStatus === "received" ? t("Connection request") : person.connectionStatus === "sent" ? t("Request sent") : person.messagingEnabled === false ? t("Messaging disabled") : person.isPrivate ? t("Private account") : `@${person.username}`}</span></span>
               {unreadPeople[person.id] > 0 && <span className="unread-badge">{unreadPeople[person.id]}</span>}
-              {lastMessage && <span className="person-time">{formatTime(lastMessage.createdAt)}</span>}
+              {person.lastMessageAt && <span className="person-time">{formatTime(person.lastMessageAt)}</span>}
             </button>;
           }) : <div className="empty-people"><span className="empty-icon"><UsersRound size={20} /></span><strong>{t(search ? "No one found" : "Your circle starts here")}</strong><p>{t(search ? "Try another username or request a private account with its ID." : "Search for someone by username or request a private account with its ID.")}</p></div>}
         </div>
@@ -1794,7 +1964,8 @@ export default function App() {
           onGroupUpdated={updateGroup}
           onGoBack={() => setMobileChat(false)}
           onOpenProfile={() => setProfileOpen(true)}
-        /> : !selectedPerson ? <WelcomePanel user={session.user} people={people} /> : <>
+          onForward={(message) => { setForwardTarget(message); setForwardError(""); }}
+        /> : !selectedPerson ? <WelcomePanel user={session.user} people={people}  /> : <>
           <header className="chat-header">
             <button className="icon-button back-button" aria-label="Back to people" onClick={() => setMobileChat(false)}><ArrowLeft size={19} /></button>
             <Avatar name={selectedPerson.name} online={onlineUsers.has(selectedPerson.id)} />
@@ -1837,14 +2008,21 @@ export default function App() {
                   message={message}
                   own={own}
                   avatarName={selectedPerson.name}
+                  senderName={own ? session.user.name : selectedPerson.name}
+                  sourceType="direct"
                   onEdit={editDirectMessage}
                   onDelete={deleteDirectMessage}
+                  onReply={setReplyTarget}
+                  onForward={(item) => { setForwardTarget(item); setForwardError(""); }}
                 /></div>;
               })}
               <div ref={messageEndRef} />
             </div>
             {error && <div className="inline-error" role="alert">{error}<button onClick={() => setError("")} aria-label={t("Dismiss error")}><X size={14} /></button></div>}
-            {canMessage ? <div className="composer-wrap"><form className="composer" onSubmit={sendMessage}><EmojiPicker value={draft} onChange={setDraft} textareaRef={inputRef} /><textarea ref={inputRef} value={draft} onChange={(event) => { setDraft(event.target.value); event.currentTarget.style.height = "auto"; event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 120)}px`; }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={`${t("Write a message to")} ${selectedPerson.name.split(/\s+/)[0]}…`} maxLength={4000} rows={1} /><button type="submit" className="send-button" disabled={!draft.trim() || sending} aria-label={t("Send message")}>{sending ? <span className="send-loading" /> : <Send size={17} />}</button></form><div className="composer-hint"><span>{t("Keep it kind. Keep it you.")}</span><span><kbd>Enter</kbd> {t("to send")} <span className="hint-dot">·</span> <kbd>Shift + Enter</kbd> {t("for a new line")}</span></div></div> : <div className="messaging-disabled"><ShieldOff size={17} /><span>{session.user.messagingEnabled === false ? t("Messaging disabled for your account.") : <>{selectedPerson.name} {t("is not accepting messages right now.")}</>}</span></div>}
+            {canMessage ? <div className="composer-wrap">
+              {replyTarget && <div className="reply-composer-preview"><span><strong>{t("Replying to")} {replyTarget.senderName}</strong><small>{replyTarget.content}</small></span><button type="button" onClick={() => setReplyTarget(null)} aria-label={t("Cancel reply")}><X size={15} /></button></div>}
+              <form className="composer" onSubmit={sendMessage}><EmojiPicker value={draft} onChange={setDraft} textareaRef={inputRef} /><textarea ref={inputRef} value={draft} onChange={(event) => { setDraft(event.target.value); event.currentTarget.style.height = "auto"; event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 120)}px`; }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={`${t("Write a message to")} ${selectedPerson.name.split(/\s+/)[0]}…`} maxLength={4000} rows={1} /><button type="submit" className="send-button" disabled={!draft.trim() || sending} aria-label={t("Send message")}>{sending ? <span className="send-loading" /> : <Send size={17} />}</button></form><div className="composer-hint"><span>{t("Keep it kind. Keep it you.")}</span><span><kbd>Enter</kbd> {t("to send")} <span className="hint-dot">·</span> <kbd>Shift + Enter</kbd> {t("for a new line")}</span></div>
+            </div> : <div className="messaging-disabled"><ShieldOff size={17} /><span>{session.user.messagingEnabled === false ? t("Messaging disabled for your account.") : <>{selectedPerson.name} {t("is not accepting messages right now.")}</>}</span></div>}
           </>}
         </>}
       </section>
@@ -1866,6 +2044,7 @@ export default function App() {
       />
       {profileOpen && <ProfileSettings
         session={session}
+        connectedPeopleCount={connectedPeopleCount}
         onClose={() => setProfileOpen(false)}
         onUpdated={(updatedSession) => setSession(updatedSession)}
         darkMode={darkMode}
@@ -1886,6 +2065,25 @@ export default function App() {
             {error && <div className="form-error" role="alert">{error}</div>}
             <button className="primary-button profile-save" disabled={creatingGroup}>{creatingGroup ? t("Creating…") : t("Create group")}</button>
           </form>
+        </section>
+      </div>}
+      {forwardTarget && <div className="settings-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !forwardBusy) setForwardTarget(null); }}>
+        <section className="forward-dialog" role="dialog" aria-modal="true" aria-labelledby="forward-title">
+          <header className="settings-header"><div><span className="welcome-tag">{t("SHARE A MESSAGE")}</span><h2 id="forward-title">{t("Forward message")}</h2></div><button className="icon-button" disabled={forwardBusy} onClick={() => setForwardTarget(null)} aria-label={t("Cancel")}><X size={19} /></button></header>
+          <div className="forward-message-preview"><strong>{t("Forwarded from")} {forwardTarget.senderName || (forwardTarget.senderId === session.user.id ? session.user.name : selectedPerson?.name || t("a group member"))}</strong><p>{forwardTarget.content}</p></div>
+          <h3>{t("Choose a conversation")}</h3>
+          {forwardError && <div className="form-error" role="alert">{forwardError}</div>}
+          <div className="forward-people-list">
+            {forwardablePeople.length > 0 && <small className="forward-section-title">{t("People")}</small>}
+            {forwardablePeople.map((person) => <button key={person.id} type="button" disabled={forwardBusy || session.user.messagingEnabled === false || person.messagingEnabled === false} onClick={() => forwardToPerson(person)}>
+              <Avatar name={person.name} size="tiny" /><span>{person.name}</span>{forwardBusy ? <span className="toggle-spinner" /> : <Forward size={15} />}
+            </button>)}
+            {groups.length > 0 && <small className="forward-section-title">{t("Groups")}</small>}
+            {groups.map((group) => <button key={group.id} type="button" disabled={forwardBusy || session.user.messagingEnabled === false} onClick={() => forwardToGroup(group)}>
+              <span className="group-list-icon"><UsersRound size={15} /></span><span>{group.name}</span>{forwardBusy ? <span className="toggle-spinner" /> : <Forward size={15} />}
+            </button>)}
+            {!forwardablePeople.length && !groups.length && <p>{t("No conversations available to forward to.")}</p>}
+          </div>
         </section>
       </div>}
     </main>

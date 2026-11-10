@@ -17,6 +17,7 @@ import Message from "./models/Message.js";
 import Connection from "./models/Connection.js";
 import User from "./models/User.js";
 import { createNotification } from "./services/notifications.js";
+import { resolveMessageContext } from "./services/messageContext.js";
 import { requireAdult, requireAuth } from "./middleware/auth.js";
 import connectDB from "./config/db.js";
 
@@ -120,16 +121,13 @@ app.get("/api/calls/ice-servers", requireAuth, requireAdult, (req, res) => {
 app.post("/api/messages", requireAuth, requireAdult, async (req, res, next) => {
   try {
     const recipientId = typeof req.body.recipientId === "string" ? req.body.recipientId : "";
-    const content = typeof req.body.content === "string" ? req.body.content.trim() : "";
+    let content = typeof req.body.content === "string" ? req.body.content.trim() : "";
 
     if (!mongoose.isValidObjectId(recipientId)) {
       return res.status(400).json({ message: "Choose a valid person to message." });
     }
     if (recipientId === req.userId) {
       return res.status(400).json({ message: "You cannot send a message to yourself." });
-    }
-    if (!content || content.length > 4000) {
-      return res.status(400).json({ message: "Message must be between 1 and 4000 characters." });
     }
     const [sender, recipient, connection] = await Promise.all([
       User.findById(req.userId).select("name username messagingEnabled +privateContacts"),
@@ -157,10 +155,26 @@ app.post("/api/messages", requireAuth, requireAdult, async (req, res, next) => {
       return res.status(403).json({ message: "Accept a connection request before sending a message." });
     }
 
+    let replyTo = null;
+    let forwardedFrom = null;
+    if (req.body.replyTo !== undefined) {
+      replyTo = await resolveMessageContext(req.body.replyTo, req.userId);
+      if (!replyTo) return res.status(400).json({ message: "The message to reply to could not be found." });
+    }
+    if (req.body.forwardedFrom !== undefined) {
+      forwardedFrom = await resolveMessageContext(req.body.forwardedFrom, req.userId);
+      if (!forwardedFrom) return res.status(400).json({ message: "The message to forward could not be found." });
+      content = forwardedFrom.content;
+    }
+    if (!content || content.length > 4000) {
+      return res.status(400).json({ message: "Message must be between 1 and 4000 characters." });
+    }
     const message = await Message.create({
       sender: req.userId,
       recipient: recipientId,
       content,
+      ...(replyTo ? { replyTo } : {}),
+      ...(forwardedFrom ? { forwardedFrom } : {}),
     });
     const responseMessage = serializeMessage(message);
     await createNotification(io, {

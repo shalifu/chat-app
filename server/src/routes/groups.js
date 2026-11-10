@@ -5,6 +5,7 @@ import GroupMessage from "../models/GroupMessage.js";
 import User from "../models/User.js";
 import { requireAdult, requireAuth } from "../middleware/auth.js";
 import { createNotification, createNotifications } from "../services/notifications.js";
+import { resolveMessageContext } from "../services/messageContext.js";
 
 const messageActionWindowMs = 10 * 60 * 1000;
 
@@ -33,6 +34,12 @@ function serializeGroupMessage(message) {
     senderId: message.sender._id.toString(),
     senderName: message.sender.name,
     content: message.content,
+    replyTo: message.replyTo?.senderName && message.replyTo?.content !== undefined
+      ? { senderName: message.replyTo.senderName, content: message.replyTo.content }
+      : null,
+    forwardedFrom: message.forwardedFrom?.senderName && message.forwardedFrom?.content !== undefined
+      ? { senderName: message.forwardedFrom.senderName, content: message.forwardedFrom.content }
+      : null,
     createdAt: message.createdAt,
     editedAt: message.editedAt || null,
   };
@@ -172,12 +179,9 @@ export default function createGroupRouter(io) {
   router.post("/:groupId/messages", async (req, res, next) => {
     try {
       const { groupId } = req.params;
-      const content = typeof req.body.content === "string" ? req.body.content.trim() : "";
+      let content = typeof req.body.content === "string" ? req.body.content.trim() : "";
       if (!mongoose.isValidObjectId(groupId)) {
         return res.status(400).json({ message: "Invalid group." });
-      }
-      if (!content || content.length > 4000) {
-        return res.status(400).json({ message: "Message must be between 1 and 4000 characters." });
       }
       const [group, sender] = await Promise.all([
         Group.findOne({ _id: groupId, members: req.userId }),
@@ -187,7 +191,27 @@ export default function createGroupRouter(io) {
       if (!sender || sender.messagingEnabled === false) {
         return res.status(403).json({ message: "Messaging is disabled for your account." });
       }
-      const message = await GroupMessage.create({ group: groupId, sender: req.userId, content });
+      let replyTo = null;
+      let forwardedFrom = null;
+      if (req.body.replyTo !== undefined) {
+        replyTo = await resolveMessageContext(req.body.replyTo, req.userId);
+        if (!replyTo) return res.status(400).json({ message: "The message to reply to could not be found." });
+      }
+      if (req.body.forwardedFrom !== undefined) {
+        forwardedFrom = await resolveMessageContext(req.body.forwardedFrom, req.userId);
+        if (!forwardedFrom) return res.status(400).json({ message: "The message to forward could not be found." });
+        content = forwardedFrom.content;
+      }
+      if (!content || content.length > 4000) {
+        return res.status(400).json({ message: "Message must be between 1 and 4000 characters." });
+      }
+      const message = await GroupMessage.create({
+        group: groupId,
+        sender: req.userId,
+        content,
+        ...(replyTo ? { replyTo } : {}),
+        ...(forwardedFrom ? { forwardedFrom } : {}),
+      });
       await message.populate("sender", "name");
       const responseMessage = serializeGroupMessage(message);
       await createNotifications(io, group.members

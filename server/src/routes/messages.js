@@ -4,6 +4,7 @@ import Connection from "../models/Connection.js";
 import Message from "../models/Message.js";
 import User from "../models/User.js";
 import { requireAdult, requireAuth } from "../middleware/auth.js";
+import { resolveMessageContext } from "../services/messageContext.js";
 
 const messageActionWindowMs = 10 * 60 * 1000;
 
@@ -14,8 +15,15 @@ function serializeMessage(message) {
     recipientId: message.recipient.toString(),
     type: message.type || "text",
     content: message.content,
+    replyTo: message.replyTo?.senderName && message.replyTo?.content !== undefined
+      ? { senderName: message.replyTo.senderName, content: message.replyTo.content }
+      : null,
+    forwardedFrom: message.forwardedFrom?.senderName && message.forwardedFrom?.content !== undefined
+      ? { senderName: message.forwardedFrom.senderName, content: message.forwardedFrom.content }
+      : null,
     createdAt: message.createdAt,
     editedAt: message.editedAt || null,
+    seenAt: message.seenAt || null,
     callType: message.callType || null,
     callStatus: message.callStatus || null,
     durationSeconds: message.durationSeconds ?? null,
@@ -24,6 +32,38 @@ function serializeMessage(message) {
 
 export default function createMessageRouter(io) {
   const router = Router();
+
+  router.patch("/:userId/seen", requireAuth, requireAdult, async (req, res, next) => {
+    try {
+      const { userId } = req.params;
+      if (!mongoose.isValidObjectId(userId)) {
+        return res.status(400).json({ message: "Invalid user." });
+      }
+      if (userId === req.userId) {
+        return res.status(400).json({ message: "You cannot mark messages as seen for yourself." });
+      }
+      const data = await Message.find({
+        sender: userId,
+        recipient: req.userId,
+        seenAt: null,
+      }).select("_id").lean();
+      const messageIds = data.map((message) => message._id.toString());
+      const seenAt = new Date();
+      if (messageIds.length) {
+        await Message.updateMany({ _id: { $in: messageIds } }, { $set: { seenAt } });
+      }
+      const payload = {
+        senderId: userId,
+        recipientId: req.userId,
+        messageIds,
+        seenAt,
+      };
+      io.to(userId).to(req.userId).emit("message:seen", payload);
+      return res.json({ messageIds });
+    } catch (error) {
+      return next(error);
+    }
+  });
 
   router.get("/:userId", requireAuth, requireAdult, async (req, res, next) => {
     try {

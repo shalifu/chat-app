@@ -1,6 +1,7 @@
 import { Router } from "express";
 import mongoose from "mongoose";
 import Connection from "../models/Connection.js";
+import Message from "../models/Message.js";
 import User from "../models/User.js";
 import { requireAdult, requireAuth } from "../middleware/auth.js";
 import { createNotification } from "../services/notifications.js";
@@ -11,7 +12,7 @@ function canonicalMembers(firstId, secondId) {
     : { memberA: secondId, memberB: firstId };
 }
 
-function serializeUser(user, currentUserId, connection, currentUser) {
+function serializeUser(user, currentUserId, connection, currentUser, lastMessageAt = null) {
   let connectionStatus = "none";
   if (connection?.status === "accepted") {
     connectionStatus = "connected";
@@ -31,6 +32,7 @@ function serializeUser(user, currentUserId, connection, currentUser) {
     isPrivate: user.isPrivate === true,
     messagingEnabled: user.messagingEnabled !== false,
     connectionStatus,
+    lastMessageAt,
     ...(connection ? { connectionId: connection._id.toString() } : {}),
   };
 }
@@ -88,9 +90,44 @@ export default function createUserRouter(io) {
         .select("name username messagingEnabled isPrivate +privateContacts")
         .sort({ name: 1 })
         .lean();
+      const userIds = users.map((user) => user._id);
+      const latestMessages = userIds.length
+        ? await Message.aggregate([
+          {
+            $match: {
+              $or: [
+                { sender: currentUser._id, recipient: { $in: userIds } },
+                { recipient: currentUser._id, sender: { $in: userIds } },
+              ],
+            },
+          },
+          { $sort: { createdAt: -1, _id: -1 } },
+          {
+            $group: {
+              _id: {
+                $cond: [
+                  { $eq: ["$sender", currentUser._id] },
+                  "$recipient",
+                  "$sender",
+                ],
+              },
+              createdAt: { $first: "$createdAt" },
+            },
+          },
+        ])
+        : [];
+      const latestMessageAtByUser = new Map(
+        latestMessages.map((message) => [message._id.toString(), message.createdAt])
+      );
       return res.json({
         users: users.map((user) =>
-          serializeUser(user, req.userId, connectionMap.get(user._id.toString()), currentUser)
+          serializeUser(
+            user,
+            req.userId,
+            connectionMap.get(user._id.toString()),
+            currentUser,
+            latestMessageAtByUser.get(user._id.toString()) || null
+          )
         ),
       });
     } catch (error) {
