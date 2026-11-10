@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   ArrowUp,
   Activity,
+  Ban,
   Bell,
   BellOff,
   Check,
@@ -28,6 +29,7 @@ import {
   ShieldCheck,
   ShieldOff,
   Smile,
+  Star,
   Sparkles,
   Sun,
   Trash2,
@@ -200,6 +202,34 @@ const kinyarwanda = {
   "Write a message to": "Andikira",
   "Search conversation": "Shakisha mu kiganiro",
   "Conversation options": "Amahitamo y'ikiganiro",
+  "Send a notification": "Ohereza imenyesha",
+  "Send an announcement to everyone or one account.": "Ohereza itangazo kuri bose cyangwa kuri konti imwe.",
+  "Send to": "Ohereza kuri",
+  "All users": "Abakoresha bose",
+  "Notification title": "Umutwe w'imenyesha",
+  "Notification message": "Ubutumwa bw'imenyesha",
+  "Send notification": "Ohereza imenyesha",
+  "Sending…": "Birimo koherezwa…",
+  "Notification sent to": "Imenyesha ryoherejwe kuri",
+  "Search messages": "Shakisha ubutumwa",
+  "Checking your session…": "Turimo kugenzura konti yawe…",
+  "Unable to verify your session": "Ntitwashoboye kugenzura konti yawe",
+  "Try again": "Ongera ugerageze",
+  "Return to sign in": "Subira ku kwinjira",
+  "Search messages in this chat": "Shakisha ubutumwa muri iki kiganiro",
+  "No messages match your search.": "Nta butumwa buhuye n'ibyo washakishije.",
+  "Delete conversation": "Siba ibiganiro kuri iyi konti",
+  "Clear this conversation from your view? Messages will remain visible to the other person.": "Siba ibiganiro kuri konti yawe? Ubutumwa buzakomeza kuboneka ku wundi muntu.",
+  "Block person": "Hagarika uyu muntu",
+  "Unblock person": "Ongera wemerere uyu muntu",
+  "Block this person? They will not be able to message you or send a connection request.": "Hagarika uyu muntu? Ntazongera kukwandikira cyangwa kohereza ubusabe bwo guhuza.",
+  "Conversation cleared from your view.": "Ibiganiro byasibwe kuri konti yawe.",
+  "This person is blocked. Unblock them to send a connection request.": "Uyu muntu waramuhagaritse. Mwemerere kugira ngo wohereze ubusabe bwo guhuza.",
+  "This person is blocked.": "Uyu muntu uramuhagaritse.",
+  "FAVORITES": "ABAKUNDAWE",
+  "Add to favorites": "Shyira mu bakunzwe",
+  "Remove from favorites": "Kura mu bakunzwe",
+  "Favorite person": "Umuntu ukunda",
   "Message sent": "Ubutumwa bwoherejwe",
   "Yesterday": "Ejo hashize",
   "Today": "Uyu munsi",
@@ -573,20 +603,9 @@ function AuthScreen({ onAuthenticated, darkMode, onToggleDarkMode }) {
   return (
     <main className="auth-page">
       <ThemeToggle darkMode={darkMode} onToggle={onToggleDarkMode} />
-      <div className="auth-art">
-        <div className="art-glow" />
-        <div className="auth-brand"><span className="brand-mark"><MessageCircle size={21} fill="currentColor" /></span> ububiko</div>
-        <div className="art-copy">
-          <div className="eyebrow"><Sparkles size={14} /> {t("A little closer, every day")}</div>
-          <h1>{t("Good conversations")}<br />{t("stay with you.")}</h1>
-          <p>{t("A calm, thoughtful space to catch up with your people — wherever life takes you.")}</p>
-        </div>
-        <div className="art-note"><span className="note-avatars"><i>J</i><i>A</i><i>M</i></span><span>{t("Made for the people who matter.")}</span></div>
-        <div className="art-orbit orbit-one" /><div className="art-orbit orbit-two" />
-      </div>
       <section className="auth-panel">
-        <div className="auth-mobile-brand"><span className="brand-mark"><MessageCircle size={18} fill="currentColor" /></span> ububiko</div>
         <div className="auth-form-wrap">
+          <div className="auth-brand-inline"><span className="brand-mark"><MessageCircle size={18} fill="currentColor" /></span> ububiko</div>
           <span className="welcome-tag">{t("YOUR SPACE, YOUR PEOPLE")}</span>
           <h2>{t(mode === "login" ? "Welcome back" : "Find your people")}</h2>
           <p className="auth-subtitle">{t(mode === "login" ? "Pick up right where you left off." : "Create an account and start a conversation.")}</p>
@@ -935,6 +954,11 @@ function AdminDashboard({ session, onUserUpdated, onUserDeleted }) {
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState("");
   const [deletingId, setDeletingId] = useState("");
+  const [notificationRecipient, setNotificationRecipient] = useState("all");
+  const [notificationTitle, setNotificationTitle] = useState("");
+  const [notificationBody, setNotificationBody] = useState("");
+  const [sendingNotification, setSendingNotification] = useState(false);
+  const [notificationSuccess, setNotificationSuccess] = useState("");
   const [error, setError] = useState("");
 
   async function loadUsers() {
@@ -989,6 +1013,32 @@ function AdminDashboard({ session, onUserUpdated, onUserDeleted }) {
     }
   }
 
+  async function sendAdminNotification(event) {
+    event.preventDefault();
+    if (sendingNotification) return;
+    setSendingNotification(true);
+    setError("");
+    setNotificationSuccess("");
+    try {
+      const { sent } = await api("/admin/notifications", {
+        token: session.token,
+        method: "POST",
+        body: JSON.stringify({
+          recipientId: notificationRecipient,
+          title: notificationTitle,
+          body: notificationBody,
+        }),
+      });
+      setNotificationSuccess(`${t("Notification sent to")} ${sent} ${t(sent === 1 ? "person" : "people")}.`);
+      setNotificationTitle("");
+      setNotificationBody("");
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSendingNotification(false);
+    }
+  }
+
   const filteredUsers = [...users].sort((first, second) => second.activeSeconds - first.activeSeconds).filter((user) =>
     `${user.name} ${user.username} ${user.email}`.toLowerCase().includes(search.trim().toLowerCase())
   );
@@ -1016,6 +1066,21 @@ function AdminDashboard({ session, onUserUpdated, onUserDeleted }) {
         <div className="admin-stat"><span className="admin-stat-icon private"><LogIn size={18} /></span><span><strong>{summary?.totalLogins ?? 0}</strong><small>{t("Total sign-ins")}</small></span></div>
         <div className="admin-stat"><span className="admin-stat-icon"><UsersRound size={18} /></span><span><strong>{summary?.totalGroups ?? 0}</strong><small>{t("Groups")}</small></span></div>
       </div>
+      <form className="admin-notification-form" onSubmit={sendAdminNotification}>
+        <div className="admin-notification-heading"><span className="admin-stat-icon"><Bell size={17} /></span><div><h3>{t("Send a notification")}</h3><p>{t("Send an announcement to everyone or one account.")}</p></div></div>
+        <label>{t("Send to")}
+          <select value={notificationRecipient} onChange={(event) => setNotificationRecipient(event.target.value)}>
+            <option value="all">{t("All users")}</option>
+            {users.map((user) => <option key={user.id} value={user.id}>{user.name} (@{user.username || "—"}){user.isAdmin ? ` · ${t("Admin")}` : ""}</option>)}
+          </select>
+        </label>
+        <label>{t("Notification title")}<input value={notificationTitle} onChange={(event) => setNotificationTitle(event.target.value)} maxLength={120} required /></label>
+        <label>{t("Notification message")}<textarea value={notificationBody} onChange={(event) => setNotificationBody(event.target.value)} maxLength={240} rows={3} required /></label>
+        <div className="admin-notification-footer">
+          <span>{notificationSuccess && <span className="admin-notification-success" role="status">{notificationSuccess}</span>}</span>
+          <button type="submit" className="primary-button" disabled={sendingNotification || loading}>{sendingNotification ? t("Sending…") : <><Send size={14} /> {t("Send notification")}</>}</button>
+        </div>
+      </form>
       <div className="admin-list-heading">
         <div><h3>{t("People")}</h3><span>{t("Sorted by tracked usage. Server uptime")}: {formatDuration(summary?.serverUptimeSeconds)}</span></div>
         <label className="admin-search"><Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("Search people")} /></label>
@@ -1071,7 +1136,7 @@ function NotificationInbox({
             onClick={() => onSelect(notification)}
             aria-label={`${t("View notification")}: ${notification.title}`}
           >
-            <span className="notification-icon">{notification.type === "connection_request" ? <UsersRound size={16} /> : notification.targetType === "group" ? <MessageSquare size={16} /> : <MessageCircle size={16} />}</span>
+            <span className="notification-icon">{notification.type === "admin_announcement" ? <Bell size={16} /> : notification.type === "connection_request" ? <UsersRound size={16} /> : notification.targetType === "group" ? <MessageSquare size={16} /> : <MessageCircle size={16} />}</span>
             <span className="notification-copy"><strong>{notification.title}</strong><span>{notification.body}</span><small>{formatDateTime(notification.createdAt)}</small></span>
             {!notification.readAt && <i className="notification-unread-dot" />}
           </button>
@@ -1085,6 +1150,9 @@ export default function App() {
   const [session, setSession] = useState(() => {
     try { return JSON.parse(localStorage.getItem("ububiko-session") || "null"); } catch { return null; }
   });
+  const [authStatus, setAuthStatus] = useState(() => session ? "checking" : "ready");
+  const [authCheckAttempt, setAuthCheckAttempt] = useState(0);
+  const [authError, setAuthError] = useState("");
   const [language, setLanguage] = useState(() => localStorage.getItem("ububiko-language") === "rw" ? "rw" : "en");
   const t = (value) => language === "rw" ? (kinyarwanda[value] || value) : value;
   const [people, setPeople] = useState([]);
@@ -1097,6 +1165,10 @@ export default function App() {
   const [unreadGroups, setUnreadGroups] = useState({});
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState("");
+  const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
+  const [conversationSearch, setConversationSearch] = useState("");
+  const [conversationMenuOpen, setConversationMenuOpen] = useState(false);
+  const [conversationActionBusy, setConversationActionBusy] = useState(false);
   const [replyTarget, setReplyTarget] = useState(null);
   const [forwardTarget, setForwardTarget] = useState(null);
   const [forwardBusy, setForwardBusy] = useState(false);
@@ -1116,6 +1188,7 @@ export default function App() {
   const [privateId, setPrivateId] = useState("");
   const [lookingUpPrivate, setLookingUpPrivate] = useState(false);
   const [connectionBusy, setConnectionBusy] = useState(false);
+  const [favoriteBusyId, setFavoriteBusyId] = useState("");
   const [updatingPrivacy, setUpdatingPrivacy] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
@@ -1127,6 +1200,8 @@ export default function App() {
   const [onlineUsers, setOnlineUsers] = useState(() => new Set());
   const messageEndRef = useRef(null);
   const inputRef = useRef(null);
+  const conversationSearchInputRef = useRef(null);
+  const conversationMenuRef = useRef(null);
   const selectedIdRef = useRef(selectedId);
   const selectedGroupIdRef = useRef(selectedGroupId);
   const notificationsEnabledRef = useRef(notificationsEnabled);
@@ -1138,6 +1213,10 @@ export default function App() {
   sessionRef.current = session;
   languageRef.current = language;
   const selectedPerson = people.find((person) => person.id === selectedId);
+  const visibleMessages = conversationSearch.trim()
+    ? messages.filter((message) => `${message.content} ${message.replyTo?.content || ""} ${message.forwardedFrom?.senderName || ""}`
+      .toLocaleLowerCase().includes(conversationSearch.trim().toLocaleLowerCase()))
+    : messages;
   const forwardablePeople = people.filter((person) => person.connectionStatus === "connected");
   const connectedPeopleCount = people.filter((person) => person.connectionStatus === "connected").length;
   const selectedGroup = groups.find((group) => group.id === selectedGroupId);
@@ -1157,6 +1236,36 @@ export default function App() {
   }, [session]);
 
   useEffect(() => {
+    if (!session?.token) {
+      if (session) setSession(null);
+      setAuthStatus("ready");
+      return undefined;
+    }
+
+    let active = true;
+    setAuthStatus("checking");
+    setAuthError("");
+    api("/auth/me", { token: session.token })
+      .then(({ user }) => {
+        if (!active) return;
+        setSession((current) => current?.token === session.token ? { ...current, user } : current);
+        setAdminView(user.isAdmin === true);
+        setAuthStatus("ready");
+      })
+      .catch((requestError) => {
+        if (!active) return;
+        if (requestError.status === 401 || requestError.status === 404) {
+          setSession((current) => current?.token === session.token ? null : current);
+          setAuthStatus("ready");
+          return;
+        }
+        setAuthError(requestError.message);
+        setAuthStatus("error");
+      });
+    return () => { active = false; };
+  }, [session?.token, authCheckAttempt]);
+
+  useEffect(() => {
     document.documentElement.classList.toggle("dark-mode", darkMode);
     document.documentElement.style.colorScheme = darkMode ? "dark" : "light";
   }, [darkMode]);
@@ -1167,7 +1276,7 @@ export default function App() {
   }, [language]);
 
   useEffect(() => {
-    if (!session) return;
+    if (!session || authStatus !== "ready") return undefined;
     let active = true;
     setLoadingPeople(true);
     api("/users", { token: session.token })
@@ -1175,20 +1284,44 @@ export default function App() {
       .catch((requestError) => { if (active) setError(requestError.message); })
       .finally(() => { if (active) setLoadingPeople(false); });
     return () => { active = false; };
-  }, [session]);
+  }, [session, authStatus]);
 
   useEffect(() => {
     setReplyTarget(null);
+    setConversationSearchOpen(false);
+    setConversationSearch("");
+    setConversationMenuOpen(false);
   }, [selectedId, selectedGroupId]);
 
   useEffect(() => {
-    if (!session) return;
+    if (conversationSearchOpen) conversationSearchInputRef.current?.focus();
+  }, [conversationSearchOpen]);
+
+  useEffect(() => {
+    if (!conversationMenuOpen) return undefined;
+    function dismissMenu(event) {
+      if (event.type === "keydown" && event.key === "Escape") {
+        setConversationMenuOpen(false);
+      } else if (event.type === "pointerdown" && !conversationMenuRef.current?.contains(event.target)) {
+        setConversationMenuOpen(false);
+      }
+    }
+    document.addEventListener("keydown", dismissMenu);
+    document.addEventListener("pointerdown", dismissMenu);
+    return () => {
+      document.removeEventListener("keydown", dismissMenu);
+      document.removeEventListener("pointerdown", dismissMenu);
+    };
+  }, [conversationMenuOpen]);
+
+  useEffect(() => {
+    if (!session || authStatus !== "ready") return undefined;
     let active = true;
     api("/groups", { token: session.token })
       .then(({ groups: loadedGroups }) => { if (active) setGroups(loadedGroups); })
       .catch((requestError) => { if (active) setError(requestError.message); });
     return () => { active = false; };
-  }, [session?.token]);
+  }, [session?.token, authStatus]);
 
   useEffect(() => {
     if (!session) {
@@ -1196,6 +1329,7 @@ export default function App() {
       setNotificationUnreadCount(0);
       return undefined;
     }
+    if (authStatus !== "ready") return undefined;
     let active = true;
     setLoadingNotifications(true);
     api("/notifications", { token: session.token })
@@ -1211,24 +1345,10 @@ export default function App() {
       .catch((requestError) => { if (active) setError(requestError.message); })
       .finally(() => { if (active) setLoadingNotifications(false); });
     return () => { active = false; };
-  }, [session?.token]);
+  }, [session?.token, authStatus]);
 
   useEffect(() => {
-    if (!session) return;
-    let active = true;
-    api("/auth/me", { token: session.token })
-      .then(({ user }) => {
-        if (active) {
-          setSession((current) => current?.token === session.token ? { ...current, user } : current);
-          if (user.isAdmin) setAdminView(true);
-        }
-      })
-      .catch((requestError) => { if (active) setError(requestError.message); });
-    return () => { active = false; };
-  }, [session?.token]);
-
-  useEffect(() => {
-    if (!session) return undefined;
+    if (!session || authStatus !== "ready") return undefined;
     let active = true;
     let sessionId = sessionStorage.getItem("ububiko-usage-session");
     let activityQueue = Promise.resolve();
@@ -1281,11 +1401,11 @@ export default function App() {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       endSession();
     };
-  }, [session?.token]);
+  }, [session?.token, authStatus]);
 
   useEffect(() => {
     const activeSession = sessionRef.current;
-    if (!activeSession) return undefined;
+    if (!activeSession || authStatus !== "ready") return undefined;
     const socket = io(API_URL, { auth: { token: activeSession.token }, autoConnect: false });
     let connectedOnce = false;
     setSocket(socket);
@@ -1432,10 +1552,10 @@ export default function App() {
       setSocket((current) => current === socket ? null : current);
       socket.disconnect();
     };
-  }, [session?.token]);
+  }, [session?.token, authStatus]);
 
   useEffect(() => {
-    if (!session || !selectedId || selectedPerson?.connectionStatus !== "connected") {
+    if (authStatus !== "ready" || !session || !selectedId || selectedPerson?.connectionStatus !== "connected") {
       setMessages([]);
       setLoadingMessages(false);
       return undefined;
@@ -1465,7 +1585,7 @@ export default function App() {
       .catch((requestError) => { if (active) setError(requestError.message); })
       .finally(() => { if (active) setLoadingMessages(false); });
     return () => { active = false; };
-  }, [session, selectedId, selectedPerson?.connectionStatus]);
+  }, [authStatus, session, selectedId, selectedPerson?.connectionStatus]);
 
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1476,11 +1596,60 @@ export default function App() {
     return people
       .filter((person) => !query || person.username?.toLowerCase().includes(query))
       .sort((first, second) => {
+        if (first.isFavorite !== second.isFavorite) return first.isFavorite ? -1 : 1;
         const firstTime = first.lastMessageAt ? new Date(first.lastMessageAt).getTime() : 0;
         const secondTime = second.lastMessageAt ? new Date(second.lastMessageAt).getTime() : 0;
         return secondTime - firstTime || first.name.localeCompare(second.name);
       });
   }, [people, search]);
+  const favoritePeople = filteredPeople.filter((person) => person.isFavorite);
+  const otherPeople = filteredPeople.filter((person) => !person.isFavorite);
+
+  async function toggleFavorite(person) {
+    if (favoriteBusyId) return;
+    const isFavorite = !person.isFavorite;
+    setFavoriteBusyId(person.id);
+    setError("");
+    try {
+      await api(`/users/${person.id}/favorite`, {
+        token: session.token,
+        method: "PATCH",
+        body: JSON.stringify({ isFavorite }),
+      });
+      setPeople((current) => current.map((item) => item.id === person.id ? { ...item, isFavorite } : item));
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setFavoriteBusyId("");
+    }
+  }
+
+  function renderPersonRow(person) {
+    return <div key={person.id} className="person-row-shell">
+      <button className={`person-row ${person.id === selectedId ? "selected" : ""}`} onClick={() => {
+        setAdminView(false);
+        setSelectedGroupId(null);
+        setSelectedId(person.id);
+        setUnreadPeople((current) => ({ ...current, [person.id]: 0 }));
+        setMobileChat(true);
+        setError("");
+      }}>
+        <Avatar name={person.name} size="normal" online={onlineUsers.has(person.id)} />
+        <span className="person-info"><span className="person-name">{person.name}</span><span className={`person-preview ${person.connectionStatus === "received" ? "connection-preview" : ""}`}>{person.connectionStatus === "received" ? t("Connection request") : person.connectionStatus === "sent" ? t("Request sent") : person.messagingEnabled === false ? t("Messaging disabled") : person.isPrivate ? t("Private account") : `@${person.username}`}</span></span>
+        {unreadPeople[person.id] > 0 && <span className="unread-badge">{unreadPeople[person.id]}</span>}
+        {person.lastMessageAt && <span className="person-time">{formatTime(person.lastMessageAt)}</span>}
+      </button>
+      <button
+        type="button"
+        className={`favorite-toggle ${person.isFavorite ? "is-favorite" : ""}`}
+        disabled={favoriteBusyId === person.id}
+        onClick={() => toggleFavorite(person)}
+        aria-label={t(person.isFavorite ? "Remove from favorites" : "Add to favorites")}
+        aria-pressed={person.isFavorite}
+        title={t(person.isFavorite ? "Remove from favorites" : "Add to favorites")}
+      ><Star size={15} fill={person.isFavorite ? "currentColor" : "none"} /></button>
+    </div>;
+  }
 
   function signOut() {
     setSession(null);
@@ -1498,6 +1667,7 @@ export default function App() {
 
   function handleAuthenticated(nextSession) {
     setSession(nextSession);
+    setAuthStatus("ready");
     setAdminView(nextSession.user.isAdmin === true);
   }
 
@@ -1577,6 +1747,7 @@ export default function App() {
     try {
       await markNotificationRead(notification);
       setNotificationOpen(false);
+      if (notification.targetType === "announcement") return;
       setAdminView(false);
       setError("");
       if (notification.targetType === "group") {
@@ -1797,6 +1968,46 @@ export default function App() {
     }
   }
 
+  async function clearConversation() {
+    if (!selectedPerson || conversationActionBusy) return;
+    if (!window.confirm(t("Clear this conversation from your view? Messages will remain visible to the other person."))) return;
+    setConversationActionBusy(true);
+    setError("");
+    try {
+      await api(`/messages/${selectedPerson.id}/clear`, { token: session.token, method: "DELETE" });
+      setMessages([]);
+      setPeople((current) => current.map((person) => person.id === selectedPerson.id
+        ? { ...person, lastMessageAt: null }
+        : person));
+      setConversationSearch("");
+      setConversationMenuOpen(false);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setConversationActionBusy(false);
+    }
+  }
+
+  async function togglePersonBlock() {
+    if (!selectedPerson || conversationActionBusy) return;
+    if (!selectedPerson.isBlocked && !window.confirm(t("Block this person? They will not be able to message you or send a connection request."))) return;
+    setConversationActionBusy(true);
+    setError("");
+    try {
+      await api(`/users/${selectedPerson.id}/block`, {
+        token: session.token,
+        method: selectedPerson.isBlocked ? "DELETE" : "POST",
+      });
+      const { users: loadedUsers } = await api("/users", { token: session.token });
+      setPeople(loadedUsers);
+      setConversationMenuOpen(false);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setConversationActionBusy(false);
+    }
+  }
+
   const canMessage = session?.user.messagingEnabled !== false && selectedPerson?.messagingEnabled !== false;
   const notifyMessage = (title, body) => {
     if (notificationsEnabledRef.current && document.visibilityState === "hidden" && "Notification" in window && Notification.permission === "granted") {
@@ -1884,6 +2095,17 @@ export default function App() {
       : current);
   }
 
+  if (session && authStatus !== "ready") return <LanguageContext.Provider value={language}>
+    <main className="auth-page auth-session-check">
+      {authStatus === "checking" ? <div className="session-check-status"><span className="send-loading" /> {t("Checking your session…")}</div> : <section className="profile-setup">
+        <span className="welcome-tag">{t("YOUR SPACE, YOUR PEOPLE")}</span>
+        <h1>{t("Unable to verify your session")}</h1>
+        <p>{authError}</p>
+        <button className="primary-button auth-check-retry" type="button" onClick={() => setAuthCheckAttempt((current) => current + 1)}>{t("Try again")}</button>
+        <button className="setup-signout" type="button" onClick={signOut}>{t("Return to sign in")}</button>
+      </section>}
+    </main>
+  </LanguageContext.Provider>;
   if (!session) return <LanguageContext.Provider value={language}><AuthScreen onAuthenticated={handleAuthenticated} darkMode={darkMode} onToggleDarkMode={toggleDarkMode} /></LanguageContext.Provider>;
   if (Number.isInteger(session.user.age) && session.user.age < 15) {
     return <LanguageContext.Provider value={language}><main className="age-blocked"><ThemeToggle darkMode={darkMode} onToggle={toggleDarkMode} /><h1>{t("Ububiko is for ages 15 and older")}</h1><p>{t("This account cannot use the app.")}</p><button className="primary-button" onClick={signOut}>{t("Sign out")}</button></main></LanguageContext.Provider>;
@@ -1935,15 +2157,14 @@ export default function App() {
             <span className="person-info"><span className="person-name">{group.name}</span><span className="person-preview">{t("Private group")}</span></span>
             {unreadGroups[group.id] > 0 && <span className="unread-badge">{unreadGroups[group.id]}</span>}
           </button>)}
-          <div className="people-label people-subheading"><span>{t("PEOPLE")}</span></div>
-          {loadingPeople ? <div className="list-state">{t("Finding your people…")}</div> : filteredPeople.length ? filteredPeople.map((person) => {
-            return <button key={person.id} className={`person-row ${person.id === selectedId ? "selected" : ""}`} onClick={() => { setAdminView(false); setSelectedGroupId(null); setSelectedId(person.id); setUnreadPeople((current) => ({ ...current, [person.id]: 0 })); setMobileChat(true); setError(""); }}>
-              <Avatar name={person.name} size="normal" online={onlineUsers.has(person.id)} />
-              <span className="person-info"><span className="person-name">{person.name}</span><span className={`person-preview ${person.connectionStatus === "received" ? "connection-preview" : ""}`}>{person.connectionStatus === "received" ? t("Connection request") : person.connectionStatus === "sent" ? t("Request sent") : person.messagingEnabled === false ? t("Messaging disabled") : person.isPrivate ? t("Private account") : `@${person.username}`}</span></span>
-              {unreadPeople[person.id] > 0 && <span className="unread-badge">{unreadPeople[person.id]}</span>}
-              {person.lastMessageAt && <span className="person-time">{formatTime(person.lastMessageAt)}</span>}
-            </button>;
-          }) : <div className="empty-people"><span className="empty-icon"><UsersRound size={20} /></span><strong>{t(search ? "No one found" : "Your circle starts here")}</strong><p>{t(search ? "Try another username or request a private account with its ID." : "Search for someone by username or request a private account with its ID.")}</p></div>}
+          {loadingPeople ? <><div className="people-label people-subheading"><span>{t("PEOPLE")}</span></div><div className="list-state">{t("Finding your people…")}</div></> : filteredPeople.length ? <>
+            {favoritePeople.length > 0 && <>
+              <div className="people-label people-subheading"><span>{t("FAVORITES")}</span></div>
+              {favoritePeople.map(renderPersonRow)}
+            </>}
+            <div className="people-label people-subheading"><span>{t("PEOPLE")}</span></div>
+            {otherPeople.map(renderPersonRow)}
+          </> : <div className="empty-people"><span className="empty-icon"><UsersRound size={20} /></span><strong>{t(search ? "No one found" : "Your circle starts here")}</strong><p>{t(search ? "Try another username or request a private account with its ID." : "Search for someone by username or request a private account with its ID.")}</p></div>}
         </div>
         <div className="sidebar-bottom">
           <button className="signout-button" onClick={signOut}><LogOut size={15} /> {t("Sign out")}</button>
@@ -1975,10 +2196,39 @@ export default function App() {
                 <button className="icon-button call-action-button" type="button" disabled={!!callManager.call || !socket?.connected} onClick={() => callManager.startCall(selectedPerson, false)} aria-label={`Start audio call with ${selectedPerson.name}`} title="Audio call"><Phone size={17} /></button>
                 <button className="icon-button call-action-button" type="button" disabled={!!callManager.call || !socket?.connected} onClick={() => callManager.startCall(selectedPerson, true)} aria-label={`Start video call with ${selectedPerson.name}`} title="Video call"><Video size={18} /></button>
               </>}
-              <button className="icon-button" aria-label={t("Search conversation")}><Search size={18} /></button><button className="icon-button" aria-label={t("Conversation options")}><MoreHorizontal size={20} /></button><button className="icon-button profile-quick-button" type="button" onClick={() => setProfileOpen(true)} aria-label={t("Open my profile")} title={t("My profile")}><UserRound size={18} /><span>{t("Profile")}</span></button>
+              <button className={`icon-button ${conversationSearchOpen ? "active" : ""}`} type="button" disabled={selectedPerson.connectionStatus !== "connected"} onClick={() => {
+                if (conversationSearchOpen) setConversationSearch("");
+                setConversationSearchOpen(!conversationSearchOpen);
+              }} aria-label={t("Search conversation")} title={t("Search messages")}><Search size={18} /></button>
+              <div className="conversation-menu-wrap" ref={conversationMenuRef}>
+                <button className={`icon-button ${conversationMenuOpen ? "active" : ""}`} type="button" onClick={() => setConversationMenuOpen((open) => !open)} aria-label={t("Conversation options")} aria-expanded={conversationMenuOpen}><MoreHorizontal size={20} /></button>
+                {conversationMenuOpen && <div className="conversation-menu" role="menu">
+                  <button type="button" role="menuitem" disabled={conversationActionBusy} onClick={clearConversation}><Trash2 size={15} />{t("Delete conversation")}</button>
+                  <button type="button" role="menuitem" className={selectedPerson.isBlocked ? "" : "danger-menu-item"} disabled={conversationActionBusy} onClick={togglePersonBlock}>
+                    <Ban size={15} />{t(selectedPerson.isBlocked ? "Unblock person" : "Block person")}
+                  </button>
+                </div>}
+              </div>
+              <button className="icon-button profile-quick-button" type="button" onClick={() => setProfileOpen(true)} aria-label={t("Open my profile")} title={t("My profile")}><UserRound size={18} /><span>{t("Profile")}</span></button>
             </div>
           </header>
-          {selectedPerson.connectionStatus !== "connected" ? <div className="connection-gate">
+          {conversationSearchOpen && selectedPerson.connectionStatus === "connected" && <div className="conversation-search-bar">
+            <Search size={15} />
+            <input ref={conversationSearchInputRef} value={conversationSearch} onChange={(event) => setConversationSearch(event.target.value)} onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                setConversationSearch("");
+                setConversationSearchOpen(false);
+              }
+            }} placeholder={t("Search messages in this chat")} aria-label={t("Search messages in this chat")} />
+            {conversationSearch && <span className="search-result-count">{visibleMessages.length} {t("messages")}</span>}
+            <button type="button" onClick={() => { setConversationSearch(""); setConversationSearchOpen(false); }} aria-label={t("Close search")}><X size={15} /></button>
+          </div>}
+          {selectedPerson.isBlocked ? <div className="connection-gate">
+            <span className="welcome-icon"><Ban size={24} /></span>
+            <h3>{t("This person is blocked.")}</h3>
+            <p>{t("This person is blocked. Unblock them to send a connection request.")}</p>
+            <button className="primary-button" type="button" disabled={conversationActionBusy} onClick={togglePersonBlock}>{conversationActionBusy ? t("Working…") : t("Unblock person")}</button>
+          </div> : selectedPerson.connectionStatus !== "connected" ? <div className="connection-gate">
             <span className="welcome-icon"><LockKeyhole size={24} /></span>
             {error && <div className="form-error" role="alert">{error}</div>}
             {selectedPerson.connectionStatus === "received" ? <>
@@ -2000,9 +2250,9 @@ export default function App() {
           </div> : <>
             <div className="messages-area">
               <div className="conversation-intro"><div className="intro-avatar"><Avatar name={selectedPerson.name} size="large" /></div><h3>{selectedPerson.name}</h3><span>@{selectedPerson.username}</span><p>{t("This is the beginning of your conversation.")}</p></div>
-              {loadingMessages ? <div className="message-loading">{t("Opening your conversation…")}</div> : messages.map((message, index) => {
+              {loadingMessages ? <div className="message-loading">{t("Opening your conversation…")}</div> : visibleMessages.length === 0 && conversationSearch ? <div className="message-loading">{t("No messages match your search.")}</div> : visibleMessages.map((message, index) => {
                 const own = message.senderId === session.user.id;
-                const previous = messages[index - 1];
+                const previous = visibleMessages[index - 1];
                 const showDate = !previous || new Date(message.createdAt).toDateString() !== new Date(previous.createdAt).toDateString();
                 return <div key={message.id}>{showDate && <div className="date-divider"><span>{formatDay(message.createdAt)}</span></div>}<MessageItem
                   message={message}

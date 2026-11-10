@@ -14,6 +14,7 @@ import createGroupRouter from "./routes/groups.js";
 import activityRoutes from "./routes/activity.js";
 import notificationRoutes from "./routes/notifications.js";
 import Message from "./models/Message.js";
+import Block from "./models/Block.js";
 import Connection from "./models/Connection.js";
 import User from "./models/User.js";
 import { createNotification } from "./services/notifications.js";
@@ -149,6 +150,12 @@ app.post("/api/messages", requireAuth, requireAdult, async (req, res, next) => {
     if (recipient.messagingEnabled === false) {
       return res.status(403).json({ message: "This person is not accepting messages right now." });
     }
+    if (await Block.exists({ $or: [
+      { blockedBy: req.userId, blockedUser: recipientId },
+      { blockedBy: recipientId, blockedUser: req.userId },
+    ] })) {
+      return res.status(403).json({ message: "This account cannot receive your messages." });
+    }
     const legacyConnection = sender.privateContacts.some((contact) => contact.equals(recipientId)) &&
       recipient.privateContacts.some((contact) => contact.equals(req.userId));
     if (!connection && !legacyConnection) {
@@ -272,7 +279,7 @@ io.on("connection", (socket) => {
     }
 
     try {
-      const [caller, recipient, connection] = await Promise.all([
+      const [caller, recipient, connection, block] = await Promise.all([
         User.findById(userId).select("name messagingEnabled"),
         User.findById(to).select("name messagingEnabled"),
         Connection.findOne({
@@ -282,8 +289,12 @@ io.on("connection", (socket) => {
             { memberA: to, memberB: userId },
           ],
         }),
+        Block.exists({ $or: [
+          { blockedBy: userId, blockedUser: to },
+          { blockedBy: to, blockedUser: userId },
+        ] }),
       ]);
-      if (!caller || !recipient || !connection) {
+      if (!caller || !recipient || !connection || block) {
         acknowledge(callback, { ok: false, message: "Calls are available only between accepted connections." });
         return;
       }

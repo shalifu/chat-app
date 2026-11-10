@@ -7,6 +7,7 @@ import Message from "../models/Message.js";
 import Notification from "../models/Notification.js";
 import UsageSession from "../models/UsageSession.js";
 import User from "../models/User.js";
+import { createNotifications } from "../services/notifications.js";
 import { requireAdult, requireAuth } from "../middleware/auth.js";
 import { requireAdmin } from "../middleware/admin.js";
 
@@ -93,6 +94,42 @@ router.get("/analytics", async (_req, res, next) => {
   }
 });
 
+router.post("/notifications", async (req, res, next) => {
+  try {
+    const title = typeof req.body.title === "string" ? req.body.title.trim() : "";
+    const body = typeof req.body.body === "string" ? req.body.body.trim() : "";
+    const recipientId = typeof req.body.recipientId === "string" ? req.body.recipientId : "";
+    if (!title || title.length > 120) {
+      return res.status(400).json({ message: "Notification title must be between 1 and 120 characters." });
+    }
+    if (!body || body.length > 240) {
+      return res.status(400).json({ message: "Notification message must be between 1 and 240 characters." });
+    }
+    if (recipientId !== "all" && !mongoose.isValidObjectId(recipientId)) {
+      return res.status(400).json({ message: "Choose a valid notification recipient." });
+    }
+
+    const recipients = recipientId === "all"
+      ? await User.find().select("_id").lean()
+      : await User.find({ _id: recipientId }).select("_id").lean();
+    if (!recipients.length) {
+      return res.status(404).json({ message: "Notification recipient not found." });
+    }
+    const notifications = await createNotifications(io, recipients.map((user) => ({
+      recipient: user._id,
+      sender: req.userId,
+      type: "admin_announcement",
+      title,
+      body,
+      targetType: "announcement",
+      targetId: req.userId,
+    })));
+    return res.status(201).json({ sent: notifications.length });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 router.patch("/users/:userId/messaging", async (req, res, next) => {
   try {
     const { userId } = req.params;
@@ -161,6 +198,7 @@ router.delete("/users/:userId", async (req, res, next) => {
       UsageSession.deleteMany({ user: userId }),
       Notification.deleteMany({ $or: [{ recipient: userId }, { sender: userId }] }),
       User.updateMany({ privateContacts: userId }, { $pull: { privateContacts: userId } }),
+      User.updateMany({ favoriteUsers: userId }, { $pull: { favoriteUsers: userId } }),
     ]);
     await Group.deleteMany({ _id: { $in: deletedGroupIds } });
     await Group.updateMany({ _id: { $in: changedGroupIds } }, { $pull: { members: userId } });

@@ -4,7 +4,11 @@ Ububiko is a chat app built with React, Express, Socket.IO, and MongoDB. People 
 
 Accounts must be registered with an age of 15 or older and a unique username. Email is used for account sign-in, but email verification is not required.
 
+The site opens on the sign-in screen for visitors who are not logged in. A valid saved session is checked on startup and takes the user directly to their home; expired sessions return to sign-in.
+
 Public accounts can be searched by username. Private accounts are hidden from the directory; people can send a connection request using the five-digit ID shown under **Profile & settings**. A conversation becomes available only after the recipient accepts. The notification inbox keeps message, connection, and group alerts so they can be opened later. Profile settings include display-name/password editing, account privacy, desktop notifications, dark mode, and language selection in English or Kinyarwanda (English by default). Groups are private and member-only; only the creator can add members.
+
+People in the sidebar can be marked as favorites with the star beside their name. Favorites are saved to the account and appear in a separate section above the rest of the people list.
 
 Accepted connections can start one-to-one audio or video calls from the conversation header. Call outcomes and durations are saved in the direct conversation history. Call setup requests media and network settings in parallel, and video starts at up to 720p before adjusting bitrate, resolution, and frame rate using live WebRTC packet-loss, latency, and bandwidth statistics. Calls require microphone/camera permission and a secure context (HTTPS, or localhost during development). STUN is used by default; for reliable calls across restrictive NATs and firewalls, configure Coturn with its REST shared-secret authentication:
 
@@ -14,6 +18,8 @@ Accepted connections can start one-to-one audio or video calls from the conversa
 The server issues short-lived TURN credentials to authenticated users. Leave both settings blank to use STUN only.
 
 In direct and group conversations, senders can edit or delete their own messages for up to 10 minutes after sending. Edits are saved for all participants and marked **Edited**; deleting a message removes it for everyone. The server enforces the time limit.
+
+Messages can be replied to or forwarded to another connected person or group. In a direct conversation, the header search filters loaded messages, and the options menu can clear the conversation from your view or block/unblock the other person. Clearing is per-account and does not remove messages from the other person's history. Blocking prevents direct messages, calls, and new connection requests until unblocked.
 
 ## Requirements
 
@@ -56,5 +62,7 @@ The client uses `VITE_API_URL` when set; otherwise, it connects to `http://local
 3. Sign in through the normal email/password login and choose **Admin dashboard** in the sidebar. Admin access is a role on the existing account; no shared or hard-coded admin password is used.
 
 The dashboard lists accounts and registration/login/last-active details; reports sign-ins, messages, server uptime, currently active users, and estimated time spent with the app open; and lets administrators disable messaging or delete non-admin accounts and their associated data. Admin APIs enforce authorization on the server. Admin accounts cannot be deleted from the dashboard, and admin roles can only be granted from the server command line.
+
+Administrators can also send an in-app notification to all accounts or to one selected account from the dashboard. Announcements appear in each recipient's notification inbox.
 
 Usage tracking starts when this version is deployed. Time is estimated from visible app sessions and periodic heartbeats; earlier usage is not available.

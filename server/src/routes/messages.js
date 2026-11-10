@@ -1,6 +1,8 @@
 import { Router } from "express";
 import mongoose from "mongoose";
 import Connection from "../models/Connection.js";
+import Block from "../models/Block.js";
+import ConversationSetting from "../models/ConversationSetting.js";
 import Message from "../models/Message.js";
 import User from "../models/User.js";
 import { requireAdult, requireAuth } from "../middleware/auth.js";
@@ -89,22 +91,51 @@ export default function createMessageRouter(io) {
       if (!person) {
         return res.status(404).json({ message: "User not found." });
       }
+      if (await Block.exists({ $or: [
+        { blockedBy: req.userId, blockedUser: userId },
+        { blockedBy: userId, blockedUser: req.userId },
+      ] })) {
+        return res.status(403).json({ message: "This conversation is unavailable." });
+      }
       const legacyConnection = currentUser?.privateContacts.some((contact) => contact.equals(userId)) &&
         legacyContact?.privateContacts.some((contact) => contact.equals(req.userId));
       if (!connection && !legacyConnection) {
         return res.status(403).json({ message: "Accept a connection request before opening this conversation." });
       }
 
-      const messages = await Message.find({
+      const setting = await ConversationSetting.findOne({ user: req.userId, contact: userId }).select("clearedAt").lean();
+      const conversationQuery = {
         $or: [
           { sender: req.userId, recipient: userId },
           { sender: userId, recipient: req.userId },
         ],
-      })
+      };
+      if (setting?.clearedAt) conversationQuery.createdAt = { $gt: setting.clearedAt };
+      const messages = await Message.find(conversationQuery)
         .sort({ createdAt: 1, _id: 1 })
         .limit(500)
         .lean();
       return res.json({ messages: messages.map(serializeMessage) });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  router.delete("/:userId/clear", requireAuth, requireAdult, async (req, res, next) => {
+    try {
+      const { userId } = req.params;
+      if (!mongoose.isValidObjectId(userId) || userId === req.userId) {
+        return res.status(400).json({ message: "Choose a valid conversation to clear." });
+      }
+      const person = await User.exists({ _id: userId });
+      if (!person) return res.status(404).json({ message: "User not found." });
+      const clearedAt = new Date();
+      await ConversationSetting.updateOne(
+        { user: req.userId, contact: userId },
+        { $set: { clearedAt } },
+        { upsert: true }
+      );
+      return res.json({ clearedAt });
     } catch (error) {
       return next(error);
     }

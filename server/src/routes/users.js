@@ -1,6 +1,8 @@
 import { Router } from "express";
 import mongoose from "mongoose";
 import Connection from "../models/Connection.js";
+import Block from "../models/Block.js";
+import ConversationSetting from "../models/ConversationSetting.js";
 import Message from "../models/Message.js";
 import User from "../models/User.js";
 import { requireAdult, requireAuth } from "../middleware/auth.js";
@@ -32,6 +34,8 @@ function serializeUser(user, currentUserId, connection, currentUser, lastMessage
     isPrivate: user.isPrivate === true,
     messagingEnabled: user.messagingEnabled !== false,
     connectionStatus,
+    isFavorite: currentUser?.favoriteUsers?.some((favorite) => favorite.toString() === user._id.toString()) || false,
+    isBlocked: false,
     lastMessageAt,
     ...(connection ? { connectionId: connection._id.toString() } : {}),
   };
@@ -64,14 +68,24 @@ export default function createUserRouter(io) {
 
   router.get("/", async (req, res, next) => {
     try {
-      const [currentUser, connections] = await Promise.all([
-        User.findById(req.userId).select("name username +privateContacts"),
+      const [currentUser, connections, blockedUsers, conversationSettings] = await Promise.all([
+        User.findById(req.userId).select("name username favoriteUsers +privateContacts"),
         Connection.find({ $or: [{ memberA: req.userId }, { memberB: req.userId }] }),
+        Block.find({ blockedBy: req.userId }).select("blockedUser").lean(),
+        ConversationSetting.find({ user: req.userId, clearedAt: { $ne: null } }).select("contact clearedAt").lean(),
       ]);
       if (!currentUser) return res.status(404).json({ message: "Account not found." });
 
       const connectionMap = new Map();
-      const relatedUserIds = [...currentUser.privateContacts];
+      const blockedUserIds = new Set(blockedUsers.map((block) => block.blockedUser.toString()));
+      const clearedAtByUser = new Map(conversationSettings.map((setting) => [
+        setting.contact.toString(),
+        setting.clearedAt,
+      ]));
+      const relatedUserIds = [
+        ...currentUser.privateContacts,
+        ...blockedUsers.map((block) => block.blockedUser),
+      ];
       for (const connection of connections) {
         const otherId = connection.memberA.toString() === req.userId
           ? connection.memberB
@@ -117,18 +131,24 @@ export default function createUserRouter(io) {
         ])
         : [];
       const latestMessageAtByUser = new Map(
-        latestMessages.map((message) => [message._id.toString(), message.createdAt])
+        latestMessages
+          .filter((message) => {
+            const clearedAt = clearedAtByUser.get(message._id.toString());
+            return !clearedAt || message.createdAt > clearedAt;
+          })
+          .map((message) => [message._id.toString(), message.createdAt])
       );
       return res.json({
-        users: users.map((user) =>
-          serializeUser(
+        users: users.map((user) => ({
+          ...serializeUser(
             user,
             req.userId,
             connectionMap.get(user._id.toString()),
             currentUser,
             latestMessageAtByUser.get(user._id.toString()) || null
-          )
-        ),
+          ),
+          isBlocked: blockedUserIds.has(user._id.toString()),
+        })),
       });
     } catch (error) {
       return next(error);
@@ -151,6 +171,12 @@ export default function createUserRouter(io) {
       }
       if (person.id === req.userId) {
         return res.status(400).json({ message: "That is your own ID." });
+      }
+      if (await Block.exists({ $or: [
+        { blockedBy: req.userId, blockedUser: person._id },
+        { blockedBy: person._id, blockedUser: req.userId },
+      ] })) {
+        return res.status(403).json({ message: "This account cannot be connected right now." });
       }
 
       const { connection, created } = await createConnectionRequest(req.userId, person);
@@ -189,6 +215,12 @@ export default function createUserRouter(io) {
       if (!person || (person.isPrivate && !person.privateContacts.some((contact) => contact.equals(req.userId)))) {
         return res.status(404).json({ message: "User not found." });
       }
+      if (await Block.exists({ $or: [
+        { blockedBy: req.userId, blockedUser: person._id },
+        { blockedBy: person._id, blockedUser: req.userId },
+      ] })) {
+        return res.status(403).json({ message: "This account cannot be connected right now." });
+      }
 
       const { connection, created } = await createConnectionRequest(req.userId, person);
       if (created) {
@@ -201,9 +233,89 @@ export default function createUserRouter(io) {
           targetType: "person",
           targetId: req.userId,
         });
+
         io.to(person.id).emit("connection:updated", { userId: req.userId });
       }
       return res.json({ user: serializeUser(person, req.userId, connection, currentUser) });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  router.post("/:userId/block", async (req, res, next) => {
+    try {
+      const { userId } = req.params;
+      if (!mongoose.isValidObjectId(userId) || userId === req.userId) {
+        return res.status(400).json({ message: "Choose a valid person to block." });
+      }
+      const person = await User.exists({ _id: userId });
+      if (!person) return res.status(404).json({ message: "User not found." });
+
+      await Block.updateOne(
+        { blockedBy: req.userId, blockedUser: userId },
+        { $setOnInsert: { blockedBy: req.userId, blockedUser: userId } },
+        { upsert: true }
+      );
+      const connection = await Connection.findOneAndDelete({
+        $or: [
+          { memberA: req.userId, memberB: userId },
+          { memberA: userId, memberB: req.userId },
+        ],
+      });
+      if (connection) io.to(userId).emit("connection:updated", { userId: req.userId });
+      return res.json({ ok: true });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  router.patch("/:userId/favorite", async (req, res, next) => {
+    try {
+      const { userId } = req.params;
+      if (!mongoose.isValidObjectId(userId) || userId === req.userId) {
+        return res.status(400).json({ message: "Choose a valid person to favorite." });
+      }
+      if (typeof req.body.isFavorite !== "boolean") {
+        return res.status(400).json({ message: "Choose whether this person is a favorite." });
+      }
+      const [person, currentUser] = await Promise.all([
+        User.findById(userId).select("isPrivate +privateContacts"),
+        User.findById(req.userId).select("favoriteUsers +privateContacts"),
+      ]);
+      if (!person || !currentUser) return res.status(404).json({ message: "Person not found." });
+
+      const connection = await Connection.exists({
+        status: "accepted",
+        $or: [
+          { memberA: req.userId, memberB: userId },
+          { memberA: userId, memberB: req.userId },
+        ],
+      });
+      const hasLegacyConnection = currentUser.privateContacts.some((contact) => contact.equals(userId)) &&
+        person.privateContacts?.some((contact) => contact.equals(req.userId));
+      if (person.isPrivate && !connection && !hasLegacyConnection) {
+        return res.status(404).json({ message: "Person not found." });
+      }
+
+      if (req.body.isFavorite) currentUser.favoriteUsers.addToSet(userId);
+      else currentUser.favoriteUsers.pull(userId);
+      await currentUser.save();
+      return res.json({ userId, isFavorite: req.body.isFavorite });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  router.delete("/:userId/block", async (req, res, next) => {
+    try {
+      const { userId } = req.params;
+      if (!mongoose.isValidObjectId(userId) || userId === req.userId) {
+        return res.status(400).json({ message: "Choose a valid person to unblock." });
+      }
+      const result = await Block.deleteOne({ blockedBy: req.userId, blockedUser: userId });
+      if (!result.deletedCount) return res.status(404).json({ message: "That person is not blocked." });
+      io.to(userId).emit("connection:updated", { userId: req.userId });
+      return res.json({ ok: true });
     } catch (error) {
       return next(error);
     }

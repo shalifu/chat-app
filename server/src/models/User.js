@@ -28,6 +28,10 @@ const userSchema = new mongoose.Schema(
       default: [],
       select: false,
     },
+    favoriteUsers: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+      default: [],
+    },
     email: {
       type: String,
       required: true,
