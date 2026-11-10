@@ -445,6 +445,7 @@ export default function useCall(socket, token, onIncomingCall) {
       if (reason === "timeout") setCallError("No answer. The call invitation expired.");
       else if (reason === "busy") setCallError("This person is already on another call.");
       else if (reason === "disconnected") setCallError("The other person's connection was lost. The call has ended.");
+      else if (reason === "declined") setCallError("The call was declined.");
       endCall(false);
     };
     const onCallRejected = ({ callId }) => {

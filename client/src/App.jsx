@@ -216,6 +216,17 @@ const kinyarwanda = {
   "Send message": "Ohereza ubutumwa",
   "Active now": "Ari kuri interineti ubu",
   "Edited": "Byahinduwe",
+  "Audio call": "Ihamagara ry'amajwi",
+  "Video call": "Ihamagara rya videwo",
+  "Missed call": "Ihamagara utitabye",
+  "No answer": "Nta gisubizo",
+  "Declined": "Byanzwe",
+  "Declined call": "Ihamagara ryanzwe",
+  "Cancelled": "Byahagaritswe",
+  "Call cancelled": "Ihamagara ryahagaritswe",
+  "Call disconnected": "Ihamagara ryacitse",
+  "Call ended": "Ihamagara ryarangiye",
+  "Call history": "Amateka y'ihamagara",
   "Edit": "Hindura",
   "Delete": "Siba",
   "Save": "Bika",
@@ -336,6 +347,30 @@ function MessageItem({ message, own, avatarName, senderName, onEdit, onDelete })
     }, expiresIn);
     return () => window.clearTimeout(timeoutId);
   }, [message.createdAt, own]);
+
+  if (message.type === "call") {
+    const icon = message.callType === "video" ? <Video size={17} /> : <Phone size={17} />;
+    const callLabel = t(message.callType === "video" ? "Video call" : "Audio call");
+    const outcome = message.callStatus === "missed"
+      ? own ? t("No answer") : t("Missed call")
+      : message.callStatus === "declined"
+        ? own ? t("Declined") : t("Declined call")
+        : message.callStatus === "cancelled"
+          ? own ? t("Cancelled") : t("Call cancelled")
+          : message.callStatus === "disconnected"
+            ? t("Call disconnected")
+            : t("Call ended");
+    const duration = message.durationSeconds > 0
+      ? ` · ${Math.floor(message.durationSeconds / 60)}:${String(message.durationSeconds % 60).padStart(2, "0")}`
+      : "";
+    return <div className={`message-row call-history-row ${own ? "own-message" : ""}`}>
+      {!own && <Avatar name={avatarName || senderName} size="tiny" />}
+      <div className="message-content">
+        <div className="call-history-card">{icon}<span><strong>{callLabel}</strong><small>{outcome}{message.callStatus === "completed" ? duration : ""}</small></span></div>
+        <span className="message-meta">{formatTime(message.createdAt)} {own && <CheckCheck size={14} />}</span>
+      </div>
+    </div>;
+  }
 
   async function saveEdit(event) {
     event.preventDefault();
@@ -1240,12 +1275,15 @@ export default function App() {
       });
     });
     socket.on("message:new", (message) => {
-      if (message.recipientId !== session.user.id) return;
-      if (message.senderId === selectedIdRef.current && !selectedGroupIdRef.current) {
+      const currentUserId = session.user.id;
+      const isParticipant = message.senderId === currentUserId || message.recipientId === currentUserId;
+      if (!isParticipant) return;
+      const otherUserId = message.senderId === currentUserId ? message.recipientId : message.senderId;
+      if (otherUserId === selectedIdRef.current && !selectedGroupIdRef.current) {
         setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
-      } else {
+      } else if (message.recipientId === currentUserId) {
         setUnreadPeople((current) => ({ ...current, [message.senderId]: (current[message.senderId] || 0) + 1 }));
-        notifyMessage(t("New message"), message.content);
+        notifyMessage(message.type === "call" ? t("Call history") : t("New message"), message.content);
       }
     });
     socket.on("message:updated", (message) => {

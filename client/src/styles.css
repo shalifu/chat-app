@@ -160,6 +160,11 @@ kbd { font: 500 9px "DM Sans", sans-serif; color: #a1a2b0; background: #f6f6f9; 
 .message-row { display: flex; align-items: end; gap: 8px; margin: 10px 0; }
 .message-content { max-width: min(72%, 440px); display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
 .message-bubble { background: #f3f3f8; color: #4c4d60; border-radius: 4px 14px 14px 14px; padding: 11px 14px; font-size: 11px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.call-history-card { display: flex; align-items: center; gap: 11px; min-width: 180px; padding: 11px 14px; border: 1px solid #e8e6f0; border-radius: 12px; color: #6156a0; background: #f8f7fc; }
+.call-history-card > span { display: flex; flex-direction: column; gap: 4px; }
+.call-history-card strong { color: #4c4d60; font-size: 11px; }
+.call-history-card small { color: #858596; font-size: 10px; }
+.own-message .call-history-card { border-color: #dedaf7; background: #f2f0ff; }
 .own-message { justify-content: flex-end; }
 .own-message .message-content { align-items: flex-end; }
 .own-message .message-bubble { color: #fff; background: #7868dc; border-radius: 14px 4px 14px 14px; box-shadow: 0 3px 8px #7665dc24; }
@@ -449,6 +454,9 @@ kbd { font: 500 9px "DM Sans", sans-serif; color: #a1a2b0; background: #f6f6f9; 
 .dark-mode .connection-gate h3 { color: #eeeeF5; }
 .dark-mode .connection-secondary { border-color: #3a3b48; color: #c0b9f4; background: #302d45; }
 .dark-mode .message-bubble { color: #e2e2eb; background: #32333f; }
+.dark-mode .call-history-card { border-color: #ffffff1c; color: #c4baff; background: #292835; }
+.dark-mode .call-history-card strong { color: #f0eff7; }
+.dark-mode .call-history-card small { color: #bbb9c9; }
 .dark-mode .own-message .message-bubble { color: white; background: #6654cd; }
 .dark-mode .message-edited, .dark-mode .message-actions button, .dark-mode .message-edit-actions button { color: #b4b5c5; }
 .dark-mode .message-edit-form { border-color: #3a3b48; background: #252630; }

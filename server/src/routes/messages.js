@@ -12,9 +12,13 @@ function serializeMessage(message) {
     id: message._id.toString(),
     senderId: message.sender.toString(),
     recipientId: message.recipient.toString(),
+    type: message.type || "text",
     content: message.content,
     createdAt: message.createdAt,
     editedAt: message.editedAt || null,
+    callType: message.callType || null,
+    callStatus: message.callStatus || null,
+    durationSeconds: message.durationSeconds ?? null,
   };
 }
 
@@ -78,12 +82,12 @@ export default function createMessageRouter(io) {
       }
       const cutoff = new Date(Date.now() - messageActionWindowMs);
       const message = await Message.findOneAndUpdate(
-        { _id: messageId, sender: req.userId, createdAt: { $gte: cutoff } },
+        { _id: messageId, sender: req.userId, type: { $ne: "call" }, createdAt: { $gte: cutoff } },
         { $set: { content, editedAt: new Date() } },
         { new: true, runValidators: true }
       );
       if (!message) {
-        const ownedMessage = await Message.exists({ _id: messageId, sender: req.userId });
+        const ownedMessage = await Message.exists({ _id: messageId, sender: req.userId, type: { $ne: "call" } });
         if (ownedMessage) {
           return res.status(403).json({ message: "Messages can only be edited or deleted within 10 minutes of sending." });
         }
@@ -107,10 +111,11 @@ export default function createMessageRouter(io) {
       const message = await Message.findOneAndDelete({
         _id: messageId,
         sender: req.userId,
+        type: { $ne: "call" },
         createdAt: { $gte: cutoff },
       });
       if (!message) {
-        const ownedMessage = await Message.exists({ _id: messageId, sender: req.userId });
+        const ownedMessage = await Message.exists({ _id: messageId, sender: req.userId, type: { $ne: "call" } });
         if (ownedMessage) {
           return res.status(403).json({ message: "Messages can only be edited or deleted within 10 minutes of sending." });
         }

@@ -40,6 +40,32 @@ const io = new Server(httpServer, {
 const activeCalls = new Map();
 const onlineSockets = new Map();
 
+async function saveCallHistory(activeCall, reason) {
+  const callStatus = reason === "timeout" || (reason === "disconnected" && activeCall.status === "ringing")
+    ? "missed"
+    : reason === "declined"
+      ? "declined"
+      : reason === "disconnected"
+        ? "disconnected"
+        : reason === "ended" && activeCall.status === "ringing"
+          ? "cancelled"
+          : "completed";
+  const durationSeconds = activeCall.acceptedAt
+    ? Math.max(0, Math.floor((Date.now() - activeCall.acceptedAt.getTime()) / 1000))
+    : 0;
+  const message = await Message.create({
+    sender: activeCall.callerId,
+    recipient: activeCall.calleeId,
+    type: "call",
+    content: `${activeCall.video ? "Video" : "Audio"} call`,
+    callType: activeCall.video ? "video" : "audio",
+    callStatus,
+    durationSeconds,
+  });
+  const responseMessage = serializeMessage(message);
+  io.to(responseMessage.senderId).to(responseMessage.recipientId).emit("message:new", responseMessage);
+}
+
 async function getVisibleUserIds(userId) {
   const [user, connections, publicUsers] = await Promise.all([
     User.findById(userId).select("+privateContacts"),
@@ -202,8 +228,10 @@ io.on("connection", (socket) => {
     if (!activeCall) return;
     clearTimeout(activeCall.timeout);
     activeCalls.delete(callId);
-    const peerId = activeCall.callerId === userId ? activeCall.calleeId : activeCall.callerId;
-    io.to(peerId).emit("call:ended", { callId, reason });
+    io.to(activeCall.callerId).to(activeCall.calleeId).emit("call:ended", { callId, reason });
+    saveCallHistory(activeCall, reason).catch((error) => {
+      console.error("Could not save call history:", error);
+    });
   }
 
   function acknowledge(callback, result) {
@@ -261,7 +289,9 @@ io.on("connection", (socket) => {
         callId,
         callerId: userId,
         calleeId: to,
+        video,
         status: "ringing",
+        acceptedAt: null,
         timeout: null,
         queuedCandidates: [],
       };
@@ -292,6 +322,7 @@ io.on("connection", (socket) => {
     clearTimeout(activeCall.timeout);
     activeCall.timeout = null;
     activeCall.status = "active";
+    activeCall.acceptedAt = new Date();
     io.to(activeCall.callerId).emit("call:accepted", { callId: activeCall.callId });
     for (const queuedCandidate of activeCall.queuedCandidates) {
       io.to(queuedCandidate.to).emit("call:candidate", {
@@ -322,9 +353,7 @@ io.on("connection", (socket) => {
     const payload = readPayload(rawPayload);
     const activeCall = activeCalls.get(payload.callId);
     if (!activeCall || activeCall.calleeId !== userId) return;
-    clearTimeout(activeCall.timeout);
-    activeCalls.delete(activeCall.callId);
-    io.to(activeCall.callerId).emit("call:rejected", { callId: activeCall.callId });
+    finishCall(activeCall.callId, "declined");
   });
 
   socket.on("call:end", (rawPayload) => {
