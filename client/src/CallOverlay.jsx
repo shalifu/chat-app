@@ -21,8 +21,8 @@ export default function CallOverlay({
   const remoteAudioRef = useRef(null);
 
   useEffect(() => {
-    if (localVideoRef.current) localVideoRef.current.srcObject = localStream || null;
-  }, [localStream]);
+    if (call?.video && localVideoRef.current) localVideoRef.current.srcObject = localStream || null;
+  }, [call?.video, localStream]);
 
   useEffect(() => {
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream || null;
