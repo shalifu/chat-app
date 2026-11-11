@@ -96,8 +96,9 @@ kbd { font: 500 9px "DM Sans", sans-serif; color: #a1a2b0; background: #f6f6f9; 
 .person-info { display: flex; flex-direction: column; min-width: 0; flex: 1; gap: 4px; }
 .person-name { font-size: 12px; font-weight: 700; }
 .person-preview { font-size: 10px; color: #999bad; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.favorited-you-marker { display: inline-flex; align-items: center; gap: 4px; max-width: 104px; color: #9a7b25; font-size: 9px; white-space: nowrap; }
-.favorited-you-marker span { overflow: hidden; text-overflow: ellipsis; }
+.favorite-avatar-wrap { position: relative; display: inline-flex; flex: 0 0 auto; }
+.profile-favorite-star { position: absolute; z-index: 2; left: 50%; bottom: -6px; transform: translateX(-50%); display: grid; place-items: center; width: 20px; height: 20px; border: 2px solid white; border-radius: 50%; color: #a67900; background: #ffd94f; box-shadow: 0 2px 5px #33270030; }
+.dark-mode .profile-favorite-star { border-color: #20212b; }
 .connection-preview { color: #6b5acb; font-weight: 700; }
 .person-time { color: #a8a9b5; font-size: 9px; align-self: flex-start; margin-top: 3px; }
 .list-state { padding: 26px 13px; color: #a1a2b1; font-size: 11px; text-align: center; }

@@ -6,6 +6,7 @@ import GroupMessage from "../models/GroupMessage.js";
 import Message from "../models/Message.js";
 import Notification from "../models/Notification.js";
 import UsageSession from "../models/UsageSession.js";
+import UsageDaily from "../models/UsageDaily.js";
 import User from "../models/User.js";
 import { createNotifications } from "../services/notifications.js";
 import { requireAdult, requireAuth } from "../middleware/auth.js";
@@ -19,8 +20,9 @@ router.use(requireAuth, requireAdult, requireAdmin);
 router.get("/analytics", async (_req, res, next) => {
   try {
     const now = new Date();
-    const activeSince = new Date(now.getTime() - 2 * 60 * 1000);
-    const [users, usage, directMessages, groupMessages, groupCount] = await Promise.all([
+    const activeSince = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const monthSince = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const [users, usage, monthUsage, directMessages, groupMessages, groupCount] = await Promise.all([
       User.find()
         .select("name username age isPrivate email messagingEnabled isAdmin createdAt lastLoginAt loginCount")
         .sort({ createdAt: -1 })
@@ -35,7 +37,7 @@ router.get("/analytics", async (_req, res, next) => {
             activeNow: {
               $sum: {
                 $cond: [
-                  { $and: [{ $eq: ["$endedAt", null] }, { $gte: ["$lastActiveAt", activeSince] }] },
+                  { $gte: ["$lastActiveAt", activeSince] },
                   1,
                   0,
                 ],
@@ -43,6 +45,10 @@ router.get("/analytics", async (_req, res, next) => {
             },
           },
         },
+      ]),
+      UsageDaily.aggregate([
+        { $match: { dayStart: { $gte: monthSince } } },
+        { $group: { _id: null, activeSeconds: { $sum: "$activeSeconds" } } },
       ]),
       Message.aggregate([{ $group: { _id: "$sender", count: { $sum: 1 } } }]),
       GroupMessage.aggregate([{ $group: { _id: "$sender", count: { $sum: 1 } } }]),
@@ -83,6 +89,7 @@ router.get("/analytics", async (_req, res, next) => {
         activeNow: serializedUsers.filter((user) => user.activeNow).length,
         totalLogins: users.reduce((total, user) => total + (user.loginCount || 0), 0),
         totalActiveSeconds: usage.reduce((total, item) => total + item.activeSeconds, 0),
+        last30DaysActiveSeconds: monthUsage[0]?.activeSeconds || 0,
         totalMessages: [...messagesByUser.values()].reduce((total, count) => total + count, 0),
         totalGroups: groupCount,
         serverUptimeSeconds: Math.floor(process.uptime()),

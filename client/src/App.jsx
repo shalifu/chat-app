@@ -155,7 +155,8 @@ const kinyarwanda = {
   "Group not found.": "Itsinda ntiriboneka.",
   "System administration": "Imicungire ya sisitemu",
   "Manage accounts, review usage, and control messaging.": "Genzura konti, imikoreshereze n'ubutumwa.",
-  "Active in last 2 minutes": "Bakoresheje mu minota 2 ishize",
+  "Active in last week": "Bakoresheje mu cyumweru gishize",
+  "Usage in last 30 days": "Ikoreshwa mu minsi 30 ishize",
   "Tracked usage": "Igihe bamaze bakoresha",
   "Messages sent": "Ubutumwa bwoherejwe",
   "Total sign-ins": "Inshuro zose zinjiwemo",
@@ -1121,8 +1122,9 @@ function AdminDashboard({ session, onUserUpdated, onUserDeleted }) {
       </header>
       <div className="admin-stats">
         <div className="admin-stat"><span className="admin-stat-icon"><UsersRound size={18} /></span><span><strong>{summary?.totalUsers ?? users.length}</strong><small>{t("Registered people")}</small></span></div>
-        <div className="admin-stat"><span className="admin-stat-icon enabled"><Activity size={18} /></span><span><strong>{summary?.activeNow ?? 0}</strong><small>{t("Active in last 2 minutes")}</small></span></div>
+        <div className="admin-stat"><span className="admin-stat-icon enabled"><Activity size={18} /></span><span><strong>{summary?.activeNow ?? 0}</strong><small>{t("Active in last week")}</small></span></div>
         <div className="admin-stat"><span className="admin-stat-icon private"><Clock3 size={18} /></span><span><strong>{formatDuration(summary?.totalActiveSeconds)}</strong><small>{t("Tracked usage")}</small></span></div>
+        <div className="admin-stat"><span className="admin-stat-icon private"><Clock3 size={18} /></span><span><strong>{formatDuration(summary?.last30DaysActiveSeconds)}</strong><small>{t("Usage in last 30 days")}</small></span></div>
         <div className="admin-stat"><span className="admin-stat-icon paused"><MessageSquare size={18} /></span><span><strong>{summary?.totalMessages ?? 0}</strong><small>{t("Messages sent")}</small></span></div>
         <div className="admin-stat"><span className="admin-stat-icon private"><LogIn size={18} /></span><span><strong>{summary?.totalLogins ?? 0}</strong><small>{t("Total sign-ins")}</small></span></div>
         <div className="admin-stat"><span className="admin-stat-icon"><UsersRound size={18} /></span><span><strong>{summary?.totalGroups ?? 0}</strong><small>{t("Groups")}</small></span></div>
@@ -1832,9 +1834,8 @@ export default function App() {
         setMobileChat(true);
         setError("");
       }}>
-        <Avatar name={person.name} size="normal" online={onlineUsers.has(person.id)} />
+        <span className="favorite-avatar-wrap"><Avatar name={person.name} size="normal" online={onlineUsers.has(person.id)} />{person.isFavoritedByYou && <span className="profile-favorite-star" title={t("Added you to favorites")} aria-label={t("Added you to favorites")}><Star size={11} fill="currentColor" /></span>}</span>
         <span className="person-info"><span className="person-name">{person.name}</span><span className={`person-preview ${person.connectionStatus === "received" ? "connection-preview" : ""}`}>{person.connectionStatus === "received" ? t("Connection request") : person.connectionStatus === "sent" ? t("Request sent") : person.messagingEnabled === false ? t("Messaging disabled") : person.isPrivate ? `${t("Private account")} · @${person.username}` : `@${person.username}`}</span></span>
-        {person.isFavoritedByYou && <span className="favorited-you-marker" title={t("Added you to favorites")}><Star size={10} fill="currentColor" /><span>{t("Added you to favorites")}</span></span>}
         {unreadPeople[person.id] > 0 && <span className="unread-badge">{unreadPeople[person.id]}</span>}
         {person.lastMessageAt && <span className="person-time">{formatTime(person.lastMessageAt)}</span>}
       </button>
@@ -2519,7 +2520,7 @@ export default function App() {
         /> : !selectedPerson ? <WelcomePanel user={session.user} people={people}  /> : <>
           <header className="chat-header">
             <button className="icon-button back-button" aria-label="Back to people" onClick={() => setMobileChat(false)}><ArrowLeft size={19} /></button>
-            <Avatar name={selectedPerson.name} online={onlineUsers.has(selectedPerson.id)} />
+            <span className="favorite-avatar-wrap"><Avatar name={selectedPerson.name} online={onlineUsers.has(selectedPerson.id)} />{selectedPerson.isFavoritedByYou && <span className="profile-favorite-star" title={t("Added you to favorites")} aria-label={t("Added you to favorites")}><Star size={11} fill="currentColor" /></span>}</span>
             <div className="chat-person"><h2>{selectedPerson.name}</h2><span>{onlineUsers.has(selectedPerson.id) && <><i className="status-dot" /> {t("Active now")} · </>}{selectedPerson.isPrivate ? <><LockKeyhole size={12} /> {t("Private account")} · @{selectedPerson.username}</> : `@${selectedPerson.username}`}</span></div>
             <div className="chat-actions">
               {selectedPerson.connectionStatus === "connected" && session.user.messagingEnabled !== false && selectedPerson.messagingEnabled !== false && <>
@@ -2583,7 +2584,7 @@ export default function App() {
             </>}
           </div> : <>
             <div className="messages-area">
-              <div className="conversation-intro"><div className="intro-avatar"><Avatar name={selectedPerson.name} size="large" /></div><h3>{selectedPerson.name}</h3><span>@{selectedPerson.username}</span><p>{t("This is the beginning of your conversation.")}</p></div>
+              <div className="conversation-intro"><div className="intro-avatar favorite-avatar-wrap"><Avatar name={selectedPerson.name} size="large" />{selectedPerson.isFavoritedByYou && <span className="profile-favorite-star" title={t("Added you to favorites")} aria-label={t("Added you to favorites")}><Star size={12} fill="currentColor" /></span>}</div><h3>{selectedPerson.name}</h3><span>@{selectedPerson.username}</span><p>{t("This is the beginning of your conversation.")}</p></div>
               {loadingMessages ? <div className="message-loading">{t("Opening your conversation…")}</div> : visibleMessages.length === 0 && conversationSearch ? <div className="message-loading">{t("No messages match your search.")}</div> : visibleMessages.map((message, index) => {
                 const own = message.senderId === session.user.id;
                 const previous = visibleMessages[index - 1];
