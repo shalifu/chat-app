@@ -233,7 +233,15 @@ const kinyarwanda = {
   "Stop recording": "Hagarika gufata amajwi",
   "Voice note": "Ubutumwa bw'amajwi",
   "Recording voice note": "Turimo gufata amajwi",
-  "Files up to 50 MB. Media deletes one day after seen.": "Amadosiye agera kuri 50 MB. Amashusho n'amajwi bisibwa nyuma y'umunsi umwe bimaze kurebwa.",
+  "Files up to 50 MB. Voice notes max 30 seconds and delete 24 hours after seen; other media deletes after one day.": "Amadosiye agera kuri 50 MB. Ubutumwa bw'amajwi ntiburenga amasegonda 30 kandi busibwa nyuma y'amasaha 24 bumaze kumvwa; ibindi bisibwa nyuma y'umunsi umwe.",
+  "Open original": "Fungura umwimerere",
+  "Download original": "Kuramo umwimerere",
+  "View image": "Reba ifoto",
+  "Close image": "Funga ifoto",
+  "Live audio waveform": "Imiterere y'amajwi iri gufatwa",
+  "is typing": "ari kwandika",
+  "Added you to favorites": "Yagushyize mu bakunzwe",
+  "Added you to their favorites.": "Yagushyize mu bantu akunda.",
   "Clear this conversation from your view? Messages will remain visible to the other person.": "Siba ibiganiro kuri konti yawe? Ubutumwa buzakomeza kuboneka ku wundi muntu.",
   "Block person": "Hagarika uyu muntu",
   "Unblock person": "Ongera wemerere uyu muntu",
@@ -402,6 +410,7 @@ function MessageItem({ message, own, avatarName, senderName, sourceType, token, 
   const [busy, setBusy] = useState(false);
   const [withinActionWindow, setWithinActionWindow] = useState(() => own && canChangeMessage(message.createdAt));
   const [mediaUrl, setMediaUrl] = useState("");
+  const [imageViewerOpen, setImageViewerOpen] = useState(false);
   const readReceipt = own && sourceType === "direct" && message.type !== "call" && (
     <span className="read-receipt" aria-label={t(message.seenAt ? "Seen" : "Not seen")} title={t(message.seenAt ? "Seen" : "Not seen")}>
       {message.seenAt ? <CheckCheck size={14} /> : <Check size={14} />}
@@ -523,12 +532,15 @@ function MessageItem({ message, own, avatarName, senderName, sourceType, token, 
       </form> : <div className={`message-bubble ${message.mediaFileId ? "media-message-bubble" : ""}`}>
         {message.replyTo && <div className="message-reply-preview"><strong>{message.replyTo.senderName}</strong><span>{message.replyTo.content}</span></div>}
         {message.mediaFileId && !mediaUrl && <span className="media-loading">Loading attachment…</span>}
-        {message.mediaFileId && mediaUrl && message.type === "image" && <img className="message-image" src={mediaUrl} alt={message.mediaName || "Shared image"} />}
-        {message.mediaFileId && mediaUrl && message.type === "gif" && <img className="message-image" src={mediaUrl} alt={message.mediaName || "Shared GIF"} />}
+        {message.mediaFileId && mediaUrl && (message.type === "image" || message.type === "gif") && <button type="button" className="message-image-open" onClick={() => setImageViewerOpen(true)} aria-label={t("View image") }><img className="message-image" src={mediaUrl} alt={message.mediaName || "Shared image"} /></button>}
         {message.mediaFileId && mediaUrl && message.type === "video" && <video className="message-video" src={mediaUrl} controls preload="metadata" />}
-        {message.mediaFileId && mediaUrl && message.type === "audio" && <audio className="message-audio" src={mediaUrl} controls preload="metadata" />}
+        {message.mediaFileId && mediaUrl && (message.type === "audio" || message.type === "voice") && <audio className="message-audio" src={mediaUrl} controls preload="metadata" />}
+        {message.mediaFileId && mediaUrl && message.type !== "audio" && message.type !== "voice" && <span className="media-file-actions">
+          <a href={mediaUrl} download={message.mediaName || "download"}>{t("Download original")}</a>
+        </span>}
         {message.content && <span>{message.content}</span>}
       </div>}
+      {imageViewerOpen && mediaUrl && <div className="media-viewer-backdrop" role="dialog" aria-modal="true" aria-label={t("View image")} onClick={() => setImageViewerOpen(false)}><button type="button" className="media-viewer-close" aria-label={t("Close image")} onClick={() => setImageViewerOpen(false)}><X size={22} /></button><img src={mediaUrl} alt={message.mediaName || "Shared image"} onClick={(event) => event.stopPropagation()} /></div>}
       {!editing && <div className="message-actions">
         <button type="button" disabled={busy} onClick={() => onReply({ ...message, senderName: senderName || message.senderName, sourceType })}>{t("Reply")}</button>
         {!message.mediaFileId && <button type="button" disabled={busy} onClick={() => onForward({ ...message, senderName: senderName || message.senderName, sourceType })}>{t("Forward")}</button>}
@@ -1185,7 +1197,7 @@ function NotificationInbox({
             onClick={() => onSelect(notification)}
             aria-label={`${t("View notification")}: ${notification.title}`}
           >
-            <span className="notification-icon">{notification.type === "admin_announcement" ? <Bell size={16} /> : notification.type === "connection_request" ? <UsersRound size={16} /> : notification.targetType === "group" ? <MessageSquare size={16} /> : <MessageCircle size={16} />}</span>
+            <span className="notification-icon">{notification.type === "admin_announcement" ? <Bell size={16} /> : notification.type === "connection_request" ? <UsersRound size={16} /> : notification.type === "favorite" ? <Star size={16} /> : notification.targetType === "group" ? <MessageSquare size={16} /> : <MessageCircle size={16} />}</span>
             <span className="notification-copy"><strong>{notification.title}</strong><span>{notification.body}</span><small>{formatDateTime(notification.createdAt)}</small></span>
             {!notification.readAt && <i className="notification-unread-dot" />}
           </button>
@@ -1228,6 +1240,9 @@ export default function App() {
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
   const [recordingVoice, setRecordingVoice] = useState(false);
+  const [recordingElapsed, setRecordingElapsed] = useState(0);
+  const [voiceWaveform, setVoiceWaveform] = useState(() => Array(24).fill(0.04));
+  const [typingByUser, setTypingByUser] = useState({});
   const [mobileChat, setMobileChat] = useState(false);
   const [adminView, setAdminView] = useState(() => {
     try { return JSON.parse(localStorage.getItem("ububiko-session") || "null")?.user?.isAdmin === true; } catch { return false; }
@@ -1257,15 +1272,26 @@ export default function App() {
   const voiceChunksRef = useRef([]);
   const voiceBytesRef = useRef(0);
   const voiceTooLargeRef = useRef(false);
+  const voiceStartedAtRef = useRef(0);
+  const voiceStopTimerRef = useRef(null);
+  const voiceRecipientRef = useRef(null);
+  const voiceWaveAnimationRef = useRef(null);
+  const typingStopTimerRef = useRef(null);
+  const lastTypingSentAtRef = useRef(0);
+  const typingTargetRef = useRef(null);
   const conversationSearchInputRef = useRef(null);
   const conversationMenuRef = useRef(null);
   const selectedIdRef = useRef(selectedId);
   const selectedGroupIdRef = useRef(selectedGroupId);
+  const messagesRef = useRef(messages);
+  const groupMessagesRef = useRef(groupMessages);
   const notificationsEnabledRef = useRef(notificationsEnabled);
   const sessionRef = useRef(session);
   const languageRef = useRef(language);
   selectedIdRef.current = selectedId;
   selectedGroupIdRef.current = selectedGroupId;
+  messagesRef.current = messages;
+  groupMessagesRef.current = groupMessages;
   notificationsEnabledRef.current = notificationsEnabled;
   sessionRef.current = session;
   languageRef.current = language;
@@ -1349,6 +1375,8 @@ export default function App() {
     setConversationSearchOpen(false);
     setConversationSearch("");
     setConversationMenuOpen(false);
+    setTypingByUser({});
+    if (typingTargetRef.current) stopTyping(typingTargetRef.current);
   }, [selectedId, selectedGroupId]);
 
   useEffect(() => {
@@ -1550,6 +1578,20 @@ export default function App() {
           : item
       ));
     });
+    socket.on("typing:update", ({ userId, isTyping }) => {
+      if (userId === sessionRef.current?.user?.id) return;
+      setTypingByUser((current) => {
+        if (!isTyping) {
+          const next = { ...current };
+          delete next[userId];
+          return next;
+        }
+        return { ...current, [userId]: true };
+      });
+    });
+    socket.on("favorite:updated", ({ userId, isFavoritedByYou }) => {
+      setPeople((current) => current.map((person) => person.id === userId ? { ...person, isFavoritedByYou } : person));
+    });
     socket.on("group:message:new", (message) => {
       if (message.groupId === selectedGroupIdRef.current) {
         setGroupMessages((current) => ({
@@ -1647,6 +1689,57 @@ export default function App() {
   }, [authStatus, session, selectedId, canOpenConversation]);
 
   useEffect(() => {
+    if (authStatus !== "ready" || !session?.token || (!selectedId && !selectedGroupId) || (selectedId && !canOpenConversation)) return undefined;
+    let active = true;
+    let fetching = false;
+    const refreshOpenConversation = async () => {
+      if (fetching || document.visibilityState !== "visible") return;
+      const personId = selectedId;
+      const groupId = selectedGroupId;
+      if (!personId && !groupId) return;
+      fetching = true;
+      try {
+        if (personId) {
+          const lastMessage = messagesRef.current.at(-1);
+          const after = lastMessage ? `?after=${encodeURIComponent(lastMessage.createdAt)}` : "";
+          const { messages: loaded } = await api(`/messages/${personId}${after}`, { token: session.token });
+          if (!active || selectedIdRef.current !== personId || selectedGroupIdRef.current) return;
+          setMessages((current) => {
+            const combined = new Map([...current, ...loaded].map((message) => [message.id, message]));
+            return [...combined.values()].sort((first, second) => new Date(first.createdAt) - new Date(second.createdAt));
+          });
+          const latestMessage = loaded.at(-1);
+          if (latestMessage) setPeople((current) => updatePersonLastMessage(current, personId, latestMessage.createdAt));
+          if (loaded.some((message) => message.senderId === personId && message.recipientId === session.user.id && !message.seenAt)) {
+            await markMessagesSeen(personId);
+          }
+        } else {
+          const lastMessage = groupMessagesRef.current[groupId]?.at(-1);
+          const after = lastMessage ? `?after=${encodeURIComponent(lastMessage.createdAt)}` : "";
+          const { messages: loaded } = await api(`/groups/${groupId}/messages${after}`, { token: session.token });
+          if (!active || selectedGroupIdRef.current !== groupId || selectedIdRef.current) return;
+          setGroupMessages((current) => {
+            const combined = new Map([...(current[groupId] || []), ...loaded].map((message) => [message.id, message]));
+            return {
+              ...current,
+              [groupId]: [...combined.values()].sort((first, second) => new Date(first.createdAt) - new Date(second.createdAt)),
+            };
+          });
+        }
+      } catch (requestError) {
+        if (active) setError(requestError.message);
+      } finally {
+        fetching = false;
+      }
+    };
+    const intervalId = window.setInterval(refreshOpenConversation, 1000);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [authStatus, session?.token, session?.user?.id, selectedId, selectedGroupId, canOpenConversation]);
+
+  useEffect(() => {
     const expiring = messages.filter((message) => message.expiresAt);
     if (!expiring.length) return undefined;
     const nextExpiry = Math.max(0, Math.min(...expiring.map((message) => new Date(message.expiresAt).getTime())) - Date.now());
@@ -1656,6 +1749,41 @@ export default function App() {
     }, nextExpiry + 50);
     return () => window.clearTimeout(timer);
   }, [messages]);
+
+  useEffect(() => {
+    const stream = recorderStreamRef.current;
+    if (!recordingVoice || !stream) return undefined;
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return undefined;
+    const audioContext = new AudioContextClass();
+    void audioContext.resume();
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 64;
+    const source = audioContext.createMediaStreamSource(stream);
+    source.connect(analyser);
+    const samples = new Uint8Array(analyser.frequencyBinCount);
+    let lastUpdate = 0;
+    const draw = (time) => {
+      analyser.getByteFrequencyData(samples);
+      if (time - lastUpdate > 90) {
+        setVoiceWaveform(Array.from({ length: 24 }, (_, index) => {
+          const sampleIndex = Math.floor(index * samples.length / 24);
+          return Math.max(0.05, samples[sampleIndex] / 255);
+        }));
+        setRecordingElapsed(Math.min(30, Math.floor((Date.now() - voiceStartedAtRef.current) / 1000)));
+        lastUpdate = time;
+      }
+      voiceWaveAnimationRef.current = window.requestAnimationFrame(draw);
+    };
+    voiceWaveAnimationRef.current = window.requestAnimationFrame(draw);
+    return () => {
+      if (voiceWaveAnimationRef.current) window.cancelAnimationFrame(voiceWaveAnimationRef.current);
+      voiceWaveAnimationRef.current = null;
+      source.disconnect();
+      analyser.disconnect();
+      void audioContext.close();
+    };
+  }, [recordingVoice]);
 
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1706,6 +1834,7 @@ export default function App() {
       }}>
         <Avatar name={person.name} size="normal" online={onlineUsers.has(person.id)} />
         <span className="person-info"><span className="person-name">{person.name}</span><span className={`person-preview ${person.connectionStatus === "received" ? "connection-preview" : ""}`}>{person.connectionStatus === "received" ? t("Connection request") : person.connectionStatus === "sent" ? t("Request sent") : person.messagingEnabled === false ? t("Messaging disabled") : person.isPrivate ? `${t("Private account")} · @${person.username}` : `@${person.username}`}</span></span>
+        {person.isFavoritedByYou && <span className="favorited-you-marker" title={t("Added you to favorites")}><Star size={10} fill="currentColor" /><span>{t("Added you to favorites")}</span></span>}
         {unreadPeople[person.id] > 0 && <span className="unread-badge">{unreadPeople[person.id]}</span>}
         {person.lastMessageAt && <span className="person-time">{formatTime(person.lastMessageAt)}</span>}
       </button>
@@ -1931,6 +2060,7 @@ export default function App() {
     event.preventDefault();
     const content = draft.trim();
     if (!content || !selectedId || sending) return;
+    stopTyping(selectedId);
     setSending(true);
     setError("");
     try {
@@ -1956,8 +2086,30 @@ export default function App() {
     }
   }
 
-  async function sendMediaFile(file) {
-    if (!file || !selectedId || sending) return;
+  function stopTyping(recipientId = typingTargetRef.current) {
+    if (typingStopTimerRef.current) window.clearTimeout(typingStopTimerRef.current);
+    typingStopTimerRef.current = null;
+    if (recipientId && socket?.connected) socket.emit("typing:stop", { to: recipientId });
+    typingTargetRef.current = null;
+    lastTypingSentAtRef.current = 0;
+  }
+
+  function updateDirectDraft(value) {
+    setDraft(value);
+    const recipientId = selectedIdRef.current;
+    if (!recipientId || selectedGroupIdRef.current || !socket?.connected) return;
+    const now = Date.now();
+    if (typingTargetRef.current !== recipientId || now - lastTypingSentAtRef.current > 1200) {
+      socket.emit("typing:start", { to: recipientId });
+      typingTargetRef.current = recipientId;
+      lastTypingSentAtRef.current = now;
+    }
+    if (typingStopTimerRef.current) window.clearTimeout(typingStopTimerRef.current);
+    typingStopTimerRef.current = window.setTimeout(() => stopTyping(recipientId), 1800);
+  }
+
+  async function sendMediaFile(file, voiceDurationSeconds = null, recipientId = selectedId) {
+    if (!file || !recipientId || sending) return;
     if (file.size > 50 * 1024 * 1024) {
       setError("Files must be 50 MB or smaller.");
       return;
@@ -1968,6 +2120,7 @@ export default function App() {
     }
     setSending(true);
     setError("");
+    stopTyping(recipientId);
     try {
       const response = await fetch(`${API_URL}/api/messages/media`, {
         method: "POST",
@@ -1975,16 +2128,19 @@ export default function App() {
           Authorization: `Bearer ${session.token}`,
           "Content-Type": "application/octet-stream",
           "X-Media-Type": file.type,
-          "X-Recipient-Id": selectedId,
+          "X-Recipient-Id": recipientId,
           "X-File-Name": encodeURIComponent(file.name || "voice-note.webm"),
+          ...(voiceDurationSeconds !== null ? { "X-Voice-Note-Duration": String(voiceDurationSeconds) } : {}),
         },
         body: file,
       });
       let data;
       try { data = await response.json(); } catch { throw new Error("The server returned an invalid response."); }
       if (!response.ok) throw new Error(data.message || "We couldn't send that file.");
-      setMessages((current) => current.some((item) => item.id === data.message.id) ? current : [...current, data.message]);
-      setPeople((current) => updatePersonLastMessage(current, selectedId, data.message.createdAt));
+      if (selectedIdRef.current === recipientId && !selectedGroupIdRef.current) {
+        setMessages((current) => current.some((item) => item.id === data.message.id) ? current : [...current, data.message]);
+      }
+      setPeople((current) => updatePersonLastMessage(current, recipientId, data.message.createdAt));
       setReplyTarget(null);
     } catch (requestError) {
       setError(requestError.message || "Could not send that file.");
@@ -2002,11 +2158,15 @@ export default function App() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
+      voiceRecipientRef.current = selectedId;
       recorderStreamRef.current = stream;
       recorderRef.current = recorder;
       voiceChunksRef.current = [];
       voiceBytesRef.current = 0;
       voiceTooLargeRef.current = false;
+      voiceStartedAtRef.current = Date.now();
+      setRecordingElapsed(0);
+      setVoiceWaveform(Array(24).fill(0.04));
       recorder.ondataavailable = (event) => {
         if (!event.data?.size) return;
         voiceBytesRef.current += event.data.size;
@@ -2019,16 +2179,23 @@ export default function App() {
         voiceChunksRef.current.push(event.data);
       };
       recorder.onstop = () => {
+        if (voiceStopTimerRef.current) window.clearTimeout(voiceStopTimerRef.current);
+        voiceStopTimerRef.current = null;
         stream.getTracks().forEach((track) => track.stop());
         setRecordingVoice(false);
         if (!voiceTooLargeRef.current && voiceChunksRef.current.length) {
           const blob = new Blob(voiceChunksRef.current, { type: recorder.mimeType || "audio/webm" });
-          void sendMediaFile(new File([blob], "voice-note.webm", { type: blob.type }));
+          const durationSeconds = Math.max(0.1, Math.min(30, (Date.now() - voiceStartedAtRef.current) / 1000));
+          void sendMediaFile(new File([blob], "voice-note.webm", { type: blob.type }), Number(durationSeconds.toFixed(2)), voiceRecipientRef.current);
         }
         recorderRef.current = null;
         recorderStreamRef.current = null;
+        voiceRecipientRef.current = null;
       };
       recorder.start(1000);
+      voiceStopTimerRef.current = window.setTimeout(() => {
+        if (recorder.state === "recording") recorder.stop();
+      }, 30 * 1000);
       setError("");
       setRecordingVoice(true);
     } catch (requestError) {
@@ -2378,6 +2545,7 @@ export default function App() {
               <button className="icon-button profile-quick-button" type="button" onClick={() => setProfileOpen(true)} aria-label={t("Open my profile")} title={t("My profile")}><UserRound size={18} /><span>{t("Profile")}</span></button>
             </div>
           </header>
+          {typingByUser[selectedPerson.id] && <div className="typing-indicator" role="status" aria-live="polite"><span className="typing-dots"><i /><i /><i /></span><span>{selectedPerson.name} {t("is typing")}</span></div>}
           {conversationSearchOpen && canOpenConversation && <div className="conversation-search-bar">
             <Search size={15} />
             <input ref={conversationSearchInputRef} value={conversationSearch} onChange={(event) => setConversationSearch(event.target.value)} onKeyDown={(event) => {
@@ -2442,9 +2610,10 @@ export default function App() {
               <div className="composer-media-tools">
                 <button className="composer-media-button" type="button" disabled={sending} onClick={() => mediaInputRef.current?.click()} aria-label={t("Attach image, GIF, or video")} title={t("Attach image, GIF, or video")}><ImagePlus size={19} /> {t("Image, GIF, or video")}</button>
                 <button className={`composer-media-button ${recordingVoice ? "recording" : ""}`} type="button" disabled={sending && !recordingVoice} onClick={toggleVoiceRecording} aria-label={t(recordingVoice ? "Stop voice note" : "Record voice note")} title={t(recordingVoice ? "Stop voice note" : "Record voice note")}>{recordingVoice ? <Square size={17} /> : <Mic size={19} />} {t(recordingVoice ? "Stop recording" : "Voice note")}</button>
-                <span>{t("Files up to 50 MB. Media deletes one day after seen.")}</span>
+                {recordingVoice && <span className="voice-recording-status" role="status"><strong>● {String(Math.floor(recordingElapsed / 60)).padStart(2, "0")}:{String(recordingElapsed % 60).padStart(2, "0")} / 00:30</strong><span className="voice-waveform" aria-label={t("Live audio waveform")}>{voiceWaveform.map((height, index) => <i key={index} style={{ height: `${Math.max(4, height * 100)}%` }} />)}</span></span>}
+                {!recordingVoice && <span>{t("Files up to 50 MB. Voice notes max 30 seconds and delete 24 hours after seen; other media deletes after one day.")}</span>}
               </div>
-              <form className="composer" onSubmit={sendMessage}><EmojiPicker value={draft} onChange={setDraft} textareaRef={inputRef} /><textarea ref={inputRef} value={draft} onChange={(event) => { setDraft(event.target.value); event.currentTarget.style.height = "auto"; event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 120)}px`; }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={`${t("Write a message to")} ${selectedPerson.name.split(/\s+/)[0]}…`} maxLength={4000} rows={1} /><button type="submit" className="send-button" disabled={!draft.trim() || sending} aria-label={t("Send message")}>{sending ? <span className="send-loading" /> : <Send size={17} />}</button></form><div className="composer-hint"><span>{t("Keep it kind. Keep it you.")}</span><span><kbd>Enter</kbd> {t("to send")} <span className="hint-dot">·</span> <kbd>Shift + Enter</kbd> {t("for a new line")}</span></div>
+              <form className="composer" onSubmit={sendMessage}><EmojiPicker value={draft} onChange={setDraft} textareaRef={inputRef} /><textarea ref={inputRef} value={draft} onChange={(event) => { updateDirectDraft(event.target.value); event.currentTarget.style.height = "auto"; event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 120)}px`; }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={`${t("Write a message to")} ${selectedPerson.name.split(/\s+/)[0]}…`} maxLength={4000} rows={1} /><button type="submit" className="send-button" disabled={!draft.trim() || sending} aria-label={t("Send message")}>{sending ? <span className="send-loading" /> : <Send size={17} />}</button></form><div className="composer-hint"><span>{t("Keep it kind. Keep it you.")}</span><span><kbd>Enter</kbd> {t("to send")} <span className="hint-dot">·</span> <kbd>Shift + Enter</kbd> {t("for a new line")}</span></div>
             </div> : <div className="messaging-disabled"><ShieldOff size={17} /><span>{session.user.messagingEnabled === false ? t("Messaging disabled for your account.") : <>{selectedPerson.name} {t("is not accepting messages right now.")}</>}</span></div>}
           </>}
         </>}

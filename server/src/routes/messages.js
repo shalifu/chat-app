@@ -13,6 +13,7 @@ import { createNotification } from "../services/notifications.js";
 const messageActionWindowMs = 10 * 60 * 1000;
 const maxMediaBytes = 50 * 1024 * 1024;
 const mediaRetentionMs = 24 * 60 * 60 * 1000;
+const voiceRetentionMs = 24 * 60 * 60 * 1000;
 
 function serializeMessage(message) {
   return {
@@ -25,6 +26,7 @@ function serializeMessage(message) {
     mediaMimeType: message.mediaMimeType || null,
     mediaName: message.mediaName || null,
     mediaSize: message.mediaSize ?? null,
+    mediaDurationSeconds: message.mediaDurationSeconds ?? null,
     replyTo: message.replyTo?.senderName && message.replyTo?.content !== undefined
       ? { senderName: message.replyTo.senderName, content: message.replyTo.content }
       : null,
@@ -71,7 +73,9 @@ export default function createMessageRouter(io) {
     let fileId;
     try {
       const recipientId = req.get("X-Recipient-Id") || "";
-      const mimeType = req.get("X-Media-Type") || "";
+      const mimeType = (req.get("X-Media-Type") || "").split(";")[0].trim().toLowerCase();
+      const voiceDurationHeader = req.get("X-Voice-Note-Duration");
+      const voiceDurationSeconds = voiceDurationHeader === undefined ? null : Number(voiceDurationHeader);
       let originalName = req.get("X-File-Name") || "attachment";
       try { originalName = decodeURIComponent(originalName); } catch { /* Keep the safe header value. */ }
       originalName = originalName.replace(/[\\/\u0000-\u001f]/g, "_").slice(0, 255);
@@ -83,6 +87,9 @@ export default function createMessageRouter(io) {
       if (file.length > maxMediaBytes) return res.status(413).json({ message: "Files must be 50 MB or smaller." });
       if (!/^(image|video|audio)\/[a-zA-Z0-9.+-]+$/.test(mimeType)) {
         return res.status(415).json({ message: "Choose an image, GIF, video, or audio file." });
+      }
+      if (voiceDurationHeader !== undefined && (!mimeType.startsWith("audio/") || !Number.isFinite(voiceDurationSeconds) || voiceDurationSeconds <= 0 || voiceDurationSeconds > 30)) {
+        return res.status(400).json({ message: "Voice notes must be 30 seconds or shorter." });
       }
       const [sender, recipient, connection] = await Promise.all([
         User.findById(req.userId).select("name messagingEnabled +privateContacts"),
@@ -105,7 +112,7 @@ export default function createMessageRouter(io) {
         return res.status(403).json({ message: "Accept a connection request before sending a message." });
       }
 
-      const kind = mimeType === "image/gif" ? "gif" : mimeType.startsWith("image/") ? "image" : mimeType.startsWith("video/") ? "video" : "audio";
+      const kind = voiceDurationHeader !== undefined ? "voice" : mimeType === "image/gif" ? "gif" : mimeType.startsWith("image/") ? "image" : mimeType.startsWith("video/") ? "video" : "audio";
       const bucket = getMediaBucket();
       const upload = bucket.openUploadStream(originalName, {
         contentType: mimeType,
@@ -121,11 +128,12 @@ export default function createMessageRouter(io) {
         sender: req.userId,
         recipient: recipientId,
         type: kind,
-        content: "",
+        content: kind === "voice" ? "Voice note" : "",
         mediaFileId: fileId,
         mediaMimeType: mimeType,
         mediaName: originalName,
         mediaSize: file.length,
+        ...(kind === "voice" ? { mediaDurationSeconds: voiceDurationSeconds } : {}),
       });
       await mongoose.connection.db.collection("messageMedia.files").updateOne(
         { _id: fileId },
@@ -221,17 +229,21 @@ export default function createMessageRouter(io) {
             { user: userId, contact: req.userId },
           ],
         });
-        const mediaIds = data.filter((message) => message.mediaFileId).map((message) => message._id);
+        const mediaMessages = data.filter((message) => message.mediaFileId);
+        const mediaIds = mediaMessages.map((message) => message._id);
         const textIds = data.filter((message) => !message.mediaFileId && message.type !== "call").map((message) => message._id);
         const expiresAt = new Date(seenAt.getTime() + mediaRetentionMs);
         await Message.updateMany({ _id: { $in: messageIds } }, { $set: { seenAt } });
         if (mediaIds.length) {
-          await Message.updateMany({ _id: { $in: mediaIds } }, { $set: { expiresAt } });
-          for (const message of data.filter((item) => item.mediaFileId)) expiresAtByMessageId[message._id.toString()] = expiresAt;
-          await mongoose.connection.db.collection("messageMedia.files").updateMany(
-            { "metadata.messageId": { $in: mediaIds.map((id) => id.toString()) } },
-            { $set: { "metadata.expiresAt": expiresAt } }
-          );
+          for (const message of mediaMessages) {
+            const messageExpiresAt = new Date(seenAt.getTime() + (message.type === "voice" ? voiceRetentionMs : mediaRetentionMs));
+            await Message.updateOne({ _id: message._id }, { $set: { expiresAt: messageExpiresAt } });
+            expiresAtByMessageId[message._id.toString()] = messageExpiresAt;
+            await mongoose.connection.db.collection("messageMedia.files").updateOne(
+              { "metadata.messageId": message._id.toString() },
+              { $set: { "metadata.expiresAt": messageExpiresAt } }
+            );
+          }
         }
         if (expirationEnabled && textIds.length) {
           await Message.updateMany({ _id: { $in: textIds } }, { $set: { expiresAt } });
@@ -316,7 +328,12 @@ export default function createMessageRouter(io) {
           { sender: userId, recipient: req.userId },
         ],
       };
-      if (setting?.clearedAt) conversationQuery.createdAt = { $gt: setting.clearedAt };
+      const after = new Date(req.query.after);
+      if (setting?.clearedAt || (req.query.after && Number.isFinite(after.getTime()))) {
+        conversationQuery.createdAt = {};
+        if (setting?.clearedAt) conversationQuery.createdAt.$gt = setting.clearedAt;
+        if (req.query.after && Number.isFinite(after.getTime())) conversationQuery.createdAt.$gte = after;
+      }
       const messages = await Message.find(conversationQuery)
         .sort({ createdAt: 1, _id: 1 })
         .limit(500)

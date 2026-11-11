@@ -6,7 +6,7 @@ const notificationSchema = new mongoose.Schema(
     sender: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
     type: {
       type: String,
-      enum: ["direct_message", "connection_request", "group_message", "group_added", "admin_announcement"],
+      enum: ["direct_message", "connection_request", "group_message", "group_added", "favorite", "admin_announcement"],
       required: true,
     },
     title: { type: String, required: true, maxlength: 120 },

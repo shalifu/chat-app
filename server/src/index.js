@@ -225,6 +225,7 @@ io.use(async (socket, next) => {
 
 io.on("connection", (socket) => {
   const userId = socket.data.userId.toString();
+  const typingTimers = new Map();
   socket.join(userId);
   const userSockets = onlineSockets.get(userId) || new Set();
   userSockets.add(socket.id);
@@ -242,6 +243,45 @@ io.on("connection", (socket) => {
       console.error("Could not load online status:", error);
       callback([]);
     }
+  });
+
+  socket.on("typing:start", async (payload = {}) => {
+    const recipientId = typeof payload?.to === "string" ? payload.to : "";
+    if (!mongoose.isValidObjectId(recipientId) || recipientId === userId) return;
+    try {
+      const [sender, recipient, connection, blocked] = await Promise.all([
+        User.findById(userId).select("+privateContacts"),
+        User.findById(recipientId).select("isPrivate +privateContacts"),
+        Connection.findOne({ status: "accepted", $or: [
+          { memberA: userId, memberB: recipientId },
+          { memberA: recipientId, memberB: userId },
+        ] }),
+        Block.exists({ $or: [
+          { blockedBy: userId, blockedUser: recipientId },
+          { blockedBy: recipientId, blockedUser: userId },
+        ] }),
+      ]);
+      if (!sender || !recipient || blocked) return;
+      const legacyConnection = sender.privateContacts.some((contact) => contact.equals(recipientId)) &&
+        recipient.privateContacts?.some((contact) => contact.equals(userId));
+      if (recipient.isPrivate && !connection && !legacyConnection) return;
+      io.to(recipientId).emit("typing:update", { userId, isTyping: true });
+      clearTimeout(typingTimers.get(recipientId));
+      typingTimers.set(recipientId, setTimeout(() => {
+        io.to(recipientId).emit("typing:update", { userId, isTyping: false });
+        typingTimers.delete(recipientId);
+      }, 4000));
+    } catch (error) {
+      console.error("Could not update typing status:", error);
+    }
+  });
+
+  socket.on("typing:stop", (payload = {}) => {
+    const recipientId = typeof payload?.to === "string" ? payload.to : "";
+    if (!mongoose.isValidObjectId(recipientId) || recipientId === userId) return;
+    clearTimeout(typingTimers.get(recipientId));
+    typingTimers.delete(recipientId);
+    io.to(recipientId).emit("typing:update", { userId, isTyping: false });
   });
 
   function finishCall(callId, reason = "ended") {
@@ -458,6 +498,11 @@ io.on("connection", (socket) => {
   });
 
   socket.on("disconnect", () => {
+    for (const [recipientId, timer] of typingTimers) {
+      clearTimeout(timer);
+      io.to(recipientId).emit("typing:update", { userId, isTyping: false });
+    }
+    typingTimers.clear();
     for (const [callId, activeCall] of activeCalls) {
       if (activeCall.callerId === userId || activeCall.calleeId === userId) finishCall(callId, "disconnected");
     }

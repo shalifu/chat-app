@@ -35,6 +35,7 @@ function serializeUser(user, currentUserId, connection, currentUser, lastMessage
     messagingEnabled: user.messagingEnabled !== false,
     connectionStatus,
     isFavorite: currentUser?.favoriteUsers?.some((favorite) => favorite.toString() === user._id.toString()) || false,
+    isFavoritedByYou: user.favoriteUsers?.some((favorite) => favorite.toString() === currentUserId) || false,
     isBlocked: false,
     lastMessageAt,
     ...(connection ? { connectionId: connection._id.toString() } : {}),
@@ -92,7 +93,7 @@ export default function createUserRouter(io) {
       const users = await User.find({
         _id: { $ne: req.userId },
       })
-        .select("name username messagingEnabled isPrivate +privateContacts")
+        .select("name username messagingEnabled isPrivate favoriteUsers +privateContacts")
         .sort({ name: 1 })
         .lean();
       const userIds = users.map((user) => user._id);
@@ -271,13 +272,26 @@ export default function createUserRouter(io) {
       }
       const [person, currentUser] = await Promise.all([
         User.findById(userId).select("_id"),
-        User.findById(req.userId).select("favoriteUsers"),
+        User.findById(req.userId).select("name favoriteUsers"),
       ]);
       if (!person || !currentUser) return res.status(404).json({ message: "Person not found." });
 
+      const wasFavorite = currentUser.favoriteUsers.some((favorite) => favorite.toString() === userId);
       if (req.body.isFavorite) currentUser.favoriteUsers.addToSet(userId);
       else currentUser.favoriteUsers.pull(userId);
       await currentUser.save();
+      io.to(userId).emit("favorite:updated", { userId: req.userId, isFavoritedByYou: req.body.isFavorite });
+      if (req.body.isFavorite && !wasFavorite) {
+        await createNotification(io, {
+          recipient: userId,
+          sender: req.userId,
+          type: "favorite",
+          title: "Added you to favorites",
+          body: `${currentUser.name} added you to their favorites.`,
+          targetType: "person",
+          targetId: req.userId,
+        });
+      }
       return res.json({ userId, isFavorite: req.body.isFavorite });
     } catch (error) {
       return next(error);

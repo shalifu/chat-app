@@ -165,7 +165,10 @@ export default function createGroupRouter(io) {
       }
       const group = await Group.findOne({ _id: groupId, members: req.userId });
       if (!group) return res.status(404).json({ message: "Group not found." });
-      const messages = await GroupMessage.find({ group: groupId })
+      const after = new Date(req.query.after);
+      const messageQuery = { group: groupId };
+      if (req.query.after && Number.isFinite(after.getTime())) messageQuery.createdAt = { $gte: after };
+      const messages = await GroupMessage.find(messageQuery)
         .populate("sender", "name")
         .sort({ createdAt: 1, _id: 1 })
         .limit(500)
