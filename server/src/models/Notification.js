@@ -19,5 +19,7 @@ const notificationSchema = new mongoose.Schema(
 );
 
 notificationSchema.index({ recipient: 1, createdAt: -1 });
+// MongoDB removes a notification five days after it is marked as read.
+notificationSchema.index({ readAt: 1 }, { expireAfterSeconds: 5 * 24 * 60 * 60 });
 
 export default mongoose.model("Notification", notificationSchema);

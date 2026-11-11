@@ -1,12 +1,12 @@
 # Ububiko
 
-Ububiko is a chat app built with React, Express, Socket.IO, and MongoDB. People can create accounts and find public accounts, but one-to-one messaging starts only after the recipient accepts a connection request. Private accounts can be requested by five-digit ID. Group chats are visible only to their members; only the group creator can add members.
+Ububiko is a chat app built with React, Express, Socket.IO, and MongoDB. Signed-in members can find every account in the people directory. Public accounts can be messaged immediately; private accounts require a connection request that the recipient accepts before messaging is available. Group chats are visible only to their members; only the group creator can add members.
 
 Accounts must be registered with an age of 15 or older and a unique username. Email is used for account sign-in, but email verification is not required.
 
 The site opens on the sign-in screen for visitors who are not logged in. A valid saved session is checked on startup and takes the user directly to their home; expired sessions return to sign-in.
 
-Public accounts can be searched by username. Private accounts are hidden from the directory; people can send a connection request using the five-digit ID shown under **Profile & settings**. A conversation becomes available only after the recipient accepts. The notification inbox keeps message, connection, and group alerts so they can be opened later. Profile settings include display-name/password editing, account privacy, desktop notifications, dark mode, and language selection in English or Kinyarwanda (English by default). Groups are private and member-only; only the creator can add members.
+All accounts are visible to signed-in members and searchable by username. Public accounts can be messaged immediately. Private accounts remain discoverable, but require an accepted connection before messaging; requests can be sent from the directory or by using the five-digit ID shown under **Profile & settings**. Direct messages show whether they have been seen. The notification inbox keeps message, connection, and group alerts so they can be opened later. Profile settings include display-name/password editing, account privacy, desktop notifications, dark mode, and language selection in English or Kinyarwanda (English by default). Groups are private and member-only; only the creator can add members.
 
 People in the sidebar can be marked as favorites with the star beside their name. Favorites are saved to the account and appear in a separate section above the rest of the people list.
 
@@ -19,7 +19,7 @@ The server issues short-lived TURN credentials to authenticated users. Leave bot
 
 In direct and group conversations, senders can edit or delete their own messages for up to 10 minutes after sending. Edits are saved for all participants and marked **Edited**; deleting a message removes it for everyone. The server enforces the time limit.
 
-Messages can be replied to or forwarded to another connected person or group. In a direct conversation, the header search filters loaded messages, and the options menu can clear the conversation from your view or block/unblock the other person. Clearing is per-account and does not remove messages from the other person's history. Blocking prevents direct messages, calls, and new connection requests until unblocked.
+Messages can be replied to or forwarded to any public account, an accepted private connection, or a group. In a direct conversation, the header search filters loaded messages, and the options menu can clear the conversation from your view or block/unblock the other person. Clearing is per-account and does not remove messages from the other person's history. Blocking prevents direct messages, calls, and new connection requests until unblocked.
 
 ## Requirements
 

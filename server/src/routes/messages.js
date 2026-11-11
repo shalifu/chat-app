@@ -26,6 +26,7 @@ function serializeMessage(message) {
     createdAt: message.createdAt,
     editedAt: message.editedAt || null,
     seenAt: message.seenAt || null,
+    expiresAt: message.expiresAt || null,
     callType: message.callType || null,
     callStatus: message.callStatus || null,
     durationSeconds: message.durationSeconds ?? null,
@@ -44,6 +45,32 @@ export default function createMessageRouter(io) {
       if (userId === req.userId) {
         return res.status(400).json({ message: "You cannot mark messages as seen for yourself." });
       }
+      const [person, connection, currentUser, legacyContact] = await Promise.all([
+        User.findById(userId).select("isPrivate"),
+        Connection.findOne({
+          status: "accepted",
+          $or: [
+            { memberA: req.userId, memberB: userId },
+            { memberA: userId, memberB: req.userId },
+          ],
+        }),
+        User.findById(req.userId).select("+privateContacts"),
+        User.findById(userId).select("+privateContacts"),
+      ]);
+      if (!person) {
+        return res.status(404).json({ message: "User not found." });
+      }
+      if (await Block.exists({ $or: [
+        { blockedBy: req.userId, blockedUser: userId },
+        { blockedBy: userId, blockedUser: req.userId },
+      ] })) {
+        return res.status(403).json({ message: "This conversation is unavailable." });
+      }
+      const legacyConnection = currentUser?.privateContacts.some((contact) => contact.equals(userId)) &&
+        legacyContact?.privateContacts.some((contact) => contact.equals(req.userId));
+      if (person.isPrivate && !connection && !legacyConnection) {
+        return res.status(403).json({ message: "Accept a connection request before opening this conversation." });
+      }
       const data = await Message.find({
         sender: userId,
         recipient: req.userId,
@@ -51,17 +78,54 @@ export default function createMessageRouter(io) {
       }).select("_id").lean();
       const messageIds = data.map((message) => message._id.toString());
       const seenAt = new Date();
+      let expiresAt = null;
       if (messageIds.length) {
-        await Message.updateMany({ _id: { $in: messageIds } }, { $set: { seenAt } });
+        const expirationEnabled = await ConversationSetting.exists({
+          deleteAfterSeen: true,
+          $or: [
+            { user: req.userId, contact: userId },
+            { user: userId, contact: req.userId },
+          ],
+        });
+        if (expirationEnabled) expiresAt = new Date(seenAt.getTime() + 24 * 60 * 60 * 1000);
+        await Message.updateMany(
+          { _id: { $in: messageIds } },
+          { $set: {
+            seenAt,
+            ...(expiresAt ? { expiresAt } : {}),
+          } }
+        );
       }
       const payload = {
         senderId: userId,
         recipientId: req.userId,
         messageIds,
         seenAt,
+        expiresAt,
       };
       io.to(userId).to(req.userId).emit("message:seen", payload);
-      return res.json({ messageIds });
+      return res.json({ messageIds, seenAt, expiresAt });
+    } catch (error) {
+      return next(error);
+    }
+  });
+
+  router.patch("/:userId/settings", requireAuth, requireAdult, async (req, res, next) => {
+    try {
+      const { userId } = req.params;
+      if (!mongoose.isValidObjectId(userId) || userId === req.userId) {
+        return res.status(400).json({ message: "Choose a valid conversation." });
+      }
+      if (typeof req.body.deleteAfterSeen !== "boolean") {
+        return res.status(400).json({ message: "Choose whether seen messages should be deleted." });
+      }
+      if (!await User.exists({ _id: userId })) return res.status(404).json({ message: "User not found." });
+      const setting = await ConversationSetting.findOneAndUpdate(
+        { user: req.userId, contact: userId },
+        { $set: { deleteAfterSeen: req.body.deleteAfterSeen } },
+        { new: true, upsert: true, setDefaultsOnInsert: true }
+      );
+      return res.json({ deleteAfterSeen: setting.deleteAfterSeen });
     } catch (error) {
       return next(error);
     }
@@ -99,7 +163,7 @@ export default function createMessageRouter(io) {
       }
       const legacyConnection = currentUser?.privateContacts.some((contact) => contact.equals(userId)) &&
         legacyContact?.privateContacts.some((contact) => contact.equals(req.userId));
-      if (!connection && !legacyConnection) {
+      if (person.isPrivate && !connection && !legacyConnection) {
         return res.status(403).json({ message: "Accept a connection request before opening this conversation." });
       }
 
@@ -115,7 +179,20 @@ export default function createMessageRouter(io) {
         .sort({ createdAt: 1, _id: 1 })
         .limit(500)
         .lean();
-      return res.json({ messages: messages.map(serializeMessage) });
+      const [conversationPreferences, expirationEnabled] = await Promise.all([
+        ConversationSetting.findOne({ user: req.userId, contact: userId }).select("deleteAfterSeen").lean(),
+        ConversationSetting.exists({
+          deleteAfterSeen: true,
+          $or: [
+            { user: req.userId, contact: userId },
+            { user: userId, contact: req.userId },
+          ],
+        }),
+      ]);
+      return res.json({
+        messages: messages.map(serializeMessage),
+        settings: { deleteAfterSeen: Boolean(conversationPreferences?.deleteAfterSeen), expirationEnabled: Boolean(expirationEnabled) },
+      });
     } catch (error) {
       return next(error);
     }

@@ -132,7 +132,7 @@ app.post("/api/messages", requireAuth, requireAdult, async (req, res, next) => {
     }
     const [sender, recipient, connection] = await Promise.all([
       User.findById(req.userId).select("name username messagingEnabled +privateContacts"),
-      User.findById(recipientId).select("messagingEnabled +privateContacts"),
+      User.findById(recipientId).select("isPrivate messagingEnabled +privateContacts"),
       Connection.findOne({
         status: "accepted",
         $or: [
@@ -158,7 +158,7 @@ app.post("/api/messages", requireAuth, requireAdult, async (req, res, next) => {
     }
     const legacyConnection = sender.privateContacts.some((contact) => contact.equals(recipientId)) &&
       recipient.privateContacts.some((contact) => contact.equals(req.userId));
-    if (!connection && !legacyConnection) {
+    if (recipient.isPrivate && !connection && !legacyConnection) {
       return res.status(403).json({ message: "Accept a connection request before sending a message." });
     }
 

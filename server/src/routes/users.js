@@ -82,24 +82,15 @@ export default function createUserRouter(io) {
         setting.contact.toString(),
         setting.clearedAt,
       ]));
-      const relatedUserIds = [
-        ...currentUser.privateContacts,
-        ...blockedUsers.map((block) => block.blockedUser),
-      ];
       for (const connection of connections) {
         const otherId = connection.memberA.toString() === req.userId
           ? connection.memberB
           : connection.memberA;
         connectionMap.set(otherId.toString(), connection);
-        relatedUserIds.push(otherId);
       }
 
       const users = await User.find({
         _id: { $ne: req.userId },
-        $or: [
-          { isPrivate: { $ne: true } },
-          { _id: { $in: relatedUserIds } },
-        ],
       })
         .select("name username messagingEnabled isPrivate +privateContacts")
         .sort({ name: 1 })
@@ -212,7 +203,7 @@ export default function createUserRouter(io) {
         User.findById(userId).select("name username isPrivate messagingEnabled +privateContacts"),
         User.findById(req.userId).select("name username +privateContacts"),
       ]);
-      if (!person || (person.isPrivate && !person.privateContacts.some((contact) => contact.equals(req.userId)))) {
+      if (!person) {
         return res.status(404).json({ message: "User not found." });
       }
       if (await Block.exists({ $or: [
@@ -279,23 +270,10 @@ export default function createUserRouter(io) {
         return res.status(400).json({ message: "Choose whether this person is a favorite." });
       }
       const [person, currentUser] = await Promise.all([
-        User.findById(userId).select("isPrivate +privateContacts"),
-        User.findById(req.userId).select("favoriteUsers +privateContacts"),
+        User.findById(userId).select("_id"),
+        User.findById(req.userId).select("favoriteUsers"),
       ]);
       if (!person || !currentUser) return res.status(404).json({ message: "Person not found." });
-
-      const connection = await Connection.exists({
-        status: "accepted",
-        $or: [
-          { memberA: req.userId, memberB: userId },
-          { memberA: userId, memberB: req.userId },
-        ],
-      });
-      const hasLegacyConnection = currentUser.privateContacts.some((contact) => contact.equals(userId)) &&
-        person.privateContacts?.some((contact) => contact.equals(req.userId));
-      if (person.isPrivate && !connection && !hasLegacyConnection) {
-        return res.status(404).json({ message: "Person not found." });
-      }
 
       if (req.body.isFavorite) currentUser.favoriteUsers.addToSet(userId);
       else currentUser.favoriteUsers.pull(userId);

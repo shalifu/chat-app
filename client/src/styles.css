@@ -190,6 +190,7 @@ kbd { font: 500 9px "DM Sans", sans-serif; color: #a1a2b0; background: #f6f6f9; 
 .own-message .message-bubble { color: #fff; background: #7868dc; border-radius: 14px 4px 14px 14px; box-shadow: 0 3px 8px #7665dc24; }
 .message-meta { display: flex; align-items: center; gap: 4px; color: #a4a5b1; font-size: 9px; }
 .own-message .message-meta svg { color: #8578d9; }
+.read-receipt { display: inline-flex; align-items: center; gap: 2px; }
 .message-edited { color: #a0a1af; font-size: 9px; font-style: italic; }
 .message-actions { display: flex; justify-content: flex-end; gap: 10px; opacity: 0; transition: opacity .15s ease; }
 .message-row:hover .message-actions, .message-row:focus-within .message-actions { opacity: 1; }

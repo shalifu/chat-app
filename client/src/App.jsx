@@ -51,10 +51,10 @@ const kinyarwanda = {
   "Create an account and start a conversation.": "Fungura konti utangire kuganira.",
   "Your name": "Amazina yawe",
   "Unique username": "Izina ryihariye",
-  "People can find public accounts by username.": "Abantu bashobora kugushaka bakoresheje izina ryawe.",
+  "Everyone can find accounts by username.": "Buri wese ashobora gushaka konti akoresheje izina.",
   "Your age": "Imyaka yawe",
   "Make my account private": "Gira konti yanjye iyihariye",
-  "People will need your five-digit ID to request a connection.": "Abantu bazakenera nimero yawe y'imibare itanu kugira ngo basabe ko muhuza.",
+  "People can find your account, but must connect and be accepted before messaging you.": "Abantu bashobora kubona konti yawe, ariko bagomba gusaba guhuza ukabyemera mbere yo kukwandikira.",
   "Email address": "Imeyili",
   "Password": "Ijambo ry'ibanga",
   "At least 8 characters": "Nibura inyuguti 8",
@@ -78,8 +78,8 @@ const kinyarwanda = {
   "Finding your people…": "Turimo gushaka abantu bawe…",
   "No one found": "Nta muntu ubonetse",
   "Your circle starts here": "Abo muganira bahera hano",
-  "Try another username or request a private account with its ID.": "Gerageza irindi zina cyangwa usabe guhuza na konti yihariye ukoresheje ID yayo.",
-  "Search for someone by username or request a private account with its ID.": "Shakisha izina cyangwa usabe guhuza na konti yihariye ukoresheje ID yayo.",
+  "Search again by username.": "Ongera ushake ukoresheje izina.",
+  "Search by username to find any account.": "Shakisha ukoresheje izina kugira ngo ubone konti iyo ari yo yose.",
   "Sign out": "Sohoka",
   "Profile": "Umwirondoro",
   "My profile": "Umwirondoro wanjye",
@@ -94,9 +94,9 @@ const kinyarwanda = {
   "Message notifications": "Kumenyeshwa ubutumwa",
   "Show browser alerts when new messages arrive.": "Erekana imenyesha iyo ubutumwa bushya buje.",
   "Private account": "Konti yihariye",
-  "Only accepted connections can message you. Share your ID to receive requests.": "Abantu mwemeye guhuza ni bo bashobora kukwandikira. Sangiza abandi ID yawe kugira ngo bakohereze ubusabe.",
+  "People must connect and be accepted before messaging you.": "Abantu bagomba gusaba guhuza ukabyemera mbere yo kukwandikira.",
   "Public account": "Konti igaragara",
-  "People can discover you by username.": "Abantu bashobora kukubona bakoresheje izina ryawe.",
+  "People can find you by username and message you right away.": "Abantu bashobora kugushaka bakoresheje izina ryawe bakakwandikira ako kanya.",
   "Language / Ururimi": "Ururimi / Language",
   "Edit profile": "Hindura umwirondoro",
   "Display name": "Izina rigaragara",
@@ -137,6 +137,8 @@ const kinyarwanda = {
   "Open my profile": "Fungura umwirondoro wanjye",
   "Invite only": "Urajyamo utumiwe gusa",
   "Connect before chatting": "Banza musabe guhuza mbere yo kuganira",
+  "Seen": "Byasomwe",
+  "Not seen": "Ntibirasomwa",
   "Send a connection request to start a private conversation.": "Saba guhuza kugira ngo mutangire kuganira mu ibanga.",
   "Request connection": "Saba guhuza",
   "Connection request sent. You can chat after they accept.": "Ubusabe bwo guhuza bwoherejwe. Muzaganira namara kubwemera.",
@@ -219,6 +221,8 @@ const kinyarwanda = {
   "Search messages in this chat": "Shakisha ubutumwa muri iki kiganiro",
   "No messages match your search.": "Nta butumwa buhuye n'ibyo washakishije.",
   "Delete conversation": "Siba ibiganiro kuri iyi konti",
+  "Delete seen messages after 1 day: On": "Siba ubutumwa bwabonwe nyuma y'umunsi 1: Bikora",
+  "Delete seen messages after 1 day: Off": "Siba ubutumwa bwabonwe nyuma y'umunsi 1: Ntibikora",
   "Clear this conversation from your view? Messages will remain visible to the other person.": "Siba ibiganiro kuri konti yawe? Ubutumwa buzakomeza kuboneka ku wundi muntu.",
   "Block person": "Hagarika uyu muntu",
   "Unblock person": "Ongera wemerere uyu muntu",
@@ -386,6 +390,12 @@ function MessageItem({ message, own, avatarName, senderName, sourceType, onEdit,
   const [draft, setDraft] = useState(message.content);
   const [busy, setBusy] = useState(false);
   const [withinActionWindow, setWithinActionWindow] = useState(() => own && canChangeMessage(message.createdAt));
+  const readReceipt = own && sourceType === "direct" && message.type !== "call" && (
+    <span className="read-receipt" aria-label={t(message.seenAt ? "Seen" : "Not seen")} title={t(message.seenAt ? "Seen" : "Not seen")}>
+      {message.seenAt ? <CheckCheck size={14} /> : <Check size={14} />}
+      <span>{t(message.seenAt ? "Seen" : "Not seen")}</span>
+    </span>
+  );
 
   useEffect(() => {
     if (!own) return undefined;
@@ -421,7 +431,7 @@ function MessageItem({ message, own, avatarName, senderName, sourceType, onEdit,
       {!own && <Avatar name={avatarName || senderName} size="tiny" />}
       <div className="message-content">
         <div className="call-history-card">{icon}<span><strong>{callLabel}</strong><small>{outcome}{message.callStatus === "completed" ? duration : ""}</small></span></div>
-        <span className="message-meta">{formatTime(message.createdAt)} {own && (message.seenAt ? <CheckCheck size={14} /> : <Check size={14} />)}</span>
+        <span className="message-meta">{formatTime(message.createdAt)} {readReceipt}</span>
       </div>
     </div>;
   }
@@ -491,7 +501,7 @@ function MessageItem({ message, own, avatarName, senderName, sourceType, onEdit,
       </div>}
       <span className="message-meta">
         {formatTime(message.createdAt)} {message.editedAt && <span className="message-edited">{t("Edited")}</span>}
-        {own && (message.seenAt ? <CheckCheck size={14} /> : <Check size={14} />)}
+        {readReceipt}
       </span>
     </div>
   </div>;
@@ -612,9 +622,9 @@ function AuthScreen({ onAuthenticated, darkMode, onToggleDarkMode }) {
           <form onSubmit={submit} className="auth-form">
             {mode === "register" && <>
               <label>{t("Your name")}<input autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Alex Morgan" required minLength={2} maxLength={60} /></label>
-              <label>{t("Unique username")}<input autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value.replace(/[^a-zA-Z0-9_]/g, "").toLowerCase())} placeholder="e.g. alex_morgan" required minLength={3} maxLength={24} pattern="[a-zA-Z0-9_]{3,24}" /><small className="field-hint">{t("People can find public accounts by username.")}</small></label>
+              <label>{t("Unique username")}<input autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value.replace(/[^a-zA-Z0-9_]/g, "").toLowerCase())} placeholder="e.g. alex_morgan" required minLength={3} maxLength={24} pattern="[a-zA-Z0-9_]{3,24}" /><small className="field-hint">{t("Everyone can find accounts by username.")}</small></label>
               <label>{t("Your age")}<input type="number" inputMode="numeric" value={age} onChange={(event) => setAge(event.target.value)} placeholder="15 or older" required min={15} max={120} step={1} /></label>
-              <label className="privacy-choice"><input type="checkbox" checked={isPrivate} onChange={(event) => setIsPrivate(event.target.checked)} /><span><strong>{t("Make my account private")}</strong><small>{t("People will need your five-digit ID to request a connection.")}</small></span></label>
+              <label className="privacy-choice"><input type="checkbox" checked={isPrivate} onChange={(event) => setIsPrivate(event.target.checked)} /><span><strong>{t("Make my account private")}</strong><small>{t("People can find your account, but must connect and be accepted before messaging you.")}</small></span></label>
             </>}
             <label>{t("Email address")}<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" required /></label>
             <label>{t("Password")}<input type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} value={password} onChange={(event) => setPassword(event.target.value)} placeholder={t("At least 8 characters")} required minLength={8} /></label>
@@ -665,7 +675,7 @@ function CompleteProfile({ session, onCompleted, onSignOut, darkMode, onToggleDa
         <form onSubmit={submit} className="auth-form">
           <label>{t("Unique username")}<input autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value.replace(/[^a-zA-Z0-9_]/g, "").toLowerCase())} required minLength={3} maxLength={24} pattern="[a-zA-Z0-9_]{3,24}" /></label>
           <label>{t("Your age")}<input type="number" inputMode="numeric" value={age} onChange={(event) => setAge(event.target.value)} required min={15} max={120} step={1} /></label>
-          <label className="privacy-choice"><input type="checkbox" checked={isPrivate} onChange={(event) => setIsPrivate(event.target.checked)} /><span><strong>{t("Make my account private")}</strong><small>{t("People will need your five-digit ID to request a connection.")}</small></span></label>
+          <label className="privacy-choice"><input type="checkbox" checked={isPrivate} onChange={(event) => setIsPrivate(event.target.checked)} /><span><strong>{t("Make my account private")}</strong><small>{t("People can find your account, but must connect and be accepted before messaging you.")}</small></span></label>
           {error && <div className="form-error" role="alert">{error}</div>}
           <button className="primary-button auth-submit" disabled={saving}>{saving ? t("Saving…") : t("Continue")} <ArrowUp size={16} className="button-arrow" /></button>
         </form>
@@ -763,7 +773,7 @@ function ProfileSettings({
           </button>
           <button className="settings-option" type="button" onClick={onTogglePrivacy} disabled={updatingPrivacy} aria-pressed={session.user.isPrivate}>
             {session.user.isPrivate ? <LockKeyhole size={17} /> : <UnlockKeyhole size={17} />}
-            <span><strong>{t(session.user.isPrivate ? "Private account" : "Public account")}</strong><small>{t(session.user.isPrivate ? "Only accepted connections can message you. Share your ID to receive requests." : "People can discover you by username.")}</small></span>
+            <span><strong>{t(session.user.isPrivate ? "Private account" : "Public account")}</strong><small>{t(session.user.isPrivate ? "People must connect and be accepted before messaging you." : "People can find you by username and message you right away.")}</small></span>
             <span className={`privacy-switch ${session.user.isPrivate ? "is-private" : ""}`} />
           </button>
         </div>
@@ -1169,6 +1179,7 @@ export default function App() {
   const [conversationSearch, setConversationSearch] = useState("");
   const [conversationMenuOpen, setConversationMenuOpen] = useState(false);
   const [conversationActionBusy, setConversationActionBusy] = useState(false);
+  const [deleteAfterSeen, setDeleteAfterSeen] = useState(false);
   const [replyTarget, setReplyTarget] = useState(null);
   const [forwardTarget, setForwardTarget] = useState(null);
   const [forwardBusy, setForwardBusy] = useState(false);
@@ -1213,11 +1224,12 @@ export default function App() {
   sessionRef.current = session;
   languageRef.current = language;
   const selectedPerson = people.find((person) => person.id === selectedId);
+  const canOpenConversation = !selectedPerson?.isPrivate || selectedPerson.connectionStatus === "connected";
   const visibleMessages = conversationSearch.trim()
     ? messages.filter((message) => `${message.content} ${message.replyTo?.content || ""} ${message.forwardedFrom?.senderName || ""}`
       .toLocaleLowerCase().includes(conversationSearch.trim().toLocaleLowerCase()))
     : messages;
-  const forwardablePeople = people.filter((person) => person.connectionStatus === "connected");
+  const forwardablePeople = people.filter((person) => !person.isPrivate || person.connectionStatus === "connected");
   const connectedPeopleCount = people.filter((person) => person.connectionStatus === "connected").length;
   const selectedGroup = groups.find((group) => group.id === selectedGroupId);
   const notificationsRef = useRef(notifications);
@@ -1482,13 +1494,13 @@ export default function App() {
     socket.on("message:deleted", ({ messageId }) => {
       setMessages((current) => current.filter((item) => item.id !== messageId));
     });
-    socket.on("message:seen", ({ senderId, messageIds = [] }) => {
+    socket.on("message:seen", ({ senderId, messageIds = [], seenAt, expiresAt }) => {
       const currentUser = sessionRef.current?.user;
       if (!messageIds.length || !currentUser || senderId !== currentUser.id) return;
-      const seenAt = new Date().toISOString();
+      const seenTime = seenAt || new Date().toISOString();
       setMessages((current) => current.map((item) =>
         messageIds.includes(item.id) && item.senderId === currentUser.id
-          ? { ...item, seenAt }
+          ? { ...item, seenAt: seenTime, ...(expiresAt ? { expiresAt } : {}) }
           : item
       ));
     });
@@ -1555,7 +1567,7 @@ export default function App() {
   }, [session?.token, authStatus]);
 
   useEffect(() => {
-    if (authStatus !== "ready" || !session || !selectedId || selectedPerson?.connectionStatus !== "connected") {
+    if (authStatus !== "ready" || !session || !selectedId || !canOpenConversation) {
       setMessages([]);
       setLoadingMessages(false);
       return undefined;
@@ -1565,8 +1577,9 @@ export default function App() {
     setLoadingMessages(true);
     setError("");
     api(`/messages/${selectedId}`, { token: session.token })
-      .then(({ messages: loaded }) => {
+      .then(({ messages: loaded, settings }) => {
         if (!active) return;
+        setDeleteAfterSeen(Boolean(settings?.deleteAfterSeen));
         setMessages((current) => {
           const currentConversation = current.filter((message) =>
             (message.senderId === selectedId && message.recipientId === session.user.id) ||
@@ -1585,7 +1598,18 @@ export default function App() {
       .catch((requestError) => { if (active) setError(requestError.message); })
       .finally(() => { if (active) setLoadingMessages(false); });
     return () => { active = false; };
-  }, [authStatus, session, selectedId, selectedPerson?.connectionStatus]);
+  }, [authStatus, session, selectedId, canOpenConversation]);
+
+  useEffect(() => {
+    const expiring = messages.filter((message) => message.expiresAt);
+    if (!expiring.length) return undefined;
+    const nextExpiry = Math.max(0, Math.min(...expiring.map((message) => new Date(message.expiresAt).getTime())) - Date.now());
+    const timer = window.setTimeout(() => {
+      const now = Date.now();
+      setMessages((current) => current.filter((message) => !message.expiresAt || new Date(message.expiresAt).getTime() > now));
+    }, nextExpiry + 50);
+    return () => window.clearTimeout(timer);
+  }, [messages]);
 
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1635,7 +1659,7 @@ export default function App() {
         setError("");
       }}>
         <Avatar name={person.name} size="normal" online={onlineUsers.has(person.id)} />
-        <span className="person-info"><span className="person-name">{person.name}</span><span className={`person-preview ${person.connectionStatus === "received" ? "connection-preview" : ""}`}>{person.connectionStatus === "received" ? t("Connection request") : person.connectionStatus === "sent" ? t("Request sent") : person.messagingEnabled === false ? t("Messaging disabled") : person.isPrivate ? t("Private account") : `@${person.username}`}</span></span>
+        <span className="person-info"><span className="person-name">{person.name}</span><span className={`person-preview ${person.connectionStatus === "received" ? "connection-preview" : ""}`}>{person.connectionStatus === "received" ? t("Connection request") : person.connectionStatus === "sent" ? t("Request sent") : person.messagingEnabled === false ? t("Messaging disabled") : person.isPrivate ? `${t("Private account")} · @${person.username}` : `@${person.username}`}</span></span>
         {unreadPeople[person.id] > 0 && <span className="unread-badge">{unreadPeople[person.id]}</span>}
         {person.lastMessageAt && <span className="person-time">{formatTime(person.lastMessageAt)}</span>}
       </button>
@@ -1674,22 +1698,16 @@ export default function App() {
   async function markMessagesSeen(personId) {
     const activeSession = sessionRef.current;
     if (!activeSession || !personId) return false;
-    const pendingIds = messages.filter((message) =>
-      message.senderId === personId &&
-      message.recipientId === activeSession.user.id &&
-      !message.seenAt
-    ).map((message) => message.id);
-    if (!pendingIds.length) return false;
     try {
-      const { messageIds } = await api(`/messages/${personId}/seen`, {
+      const { messageIds, seenAt: markedAt, expiresAt } = await api(`/messages/${personId}/seen`, {
         token: activeSession.token,
         method: "PATCH",
       });
       if (!messageIds?.length) return false;
-      const seenAt = new Date().toISOString();
+      const seenAt = markedAt || new Date().toISOString();
       setMessages((current) => current.map((message) =>
         message.senderId === personId && message.recipientId === activeSession.user.id && !message.seenAt && messageIds.includes(message.id)
-          ? { ...message, seenAt }
+          ? { ...message, seenAt, ...(expiresAt ? { expiresAt } : {}) }
           : message
       ));
       return true;
@@ -1988,6 +2006,24 @@ export default function App() {
     }
   }
 
+  async function toggleDeleteAfterSeen() {
+    if (!selectedPerson || conversationActionBusy) return;
+    setConversationActionBusy(true);
+    setError("");
+    try {
+      const { deleteAfterSeen: enabled } = await api(`/messages/${selectedPerson.id}/settings`, {
+        token: session.token,
+        method: "PATCH",
+        body: JSON.stringify({ deleteAfterSeen: !deleteAfterSeen }),
+      });
+      setDeleteAfterSeen(enabled);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setConversationActionBusy(false);
+    }
+  }
+
   async function togglePersonBlock() {
     if (!selectedPerson || conversationActionBusy) return;
     if (!selectedPerson.isBlocked && !window.confirm(t("Block this person? They will not be able to message you or send a connection request."))) return;
@@ -2164,7 +2200,7 @@ export default function App() {
             </>}
             <div className="people-label people-subheading"><span>{t("PEOPLE")}</span></div>
             {otherPeople.map(renderPersonRow)}
-          </> : <div className="empty-people"><span className="empty-icon"><UsersRound size={20} /></span><strong>{t(search ? "No one found" : "Your circle starts here")}</strong><p>{t(search ? "Try another username or request a private account with its ID." : "Search for someone by username or request a private account with its ID.")}</p></div>}
+          </> : <div className="empty-people"><span className="empty-icon"><UsersRound size={20} /></span><strong>{t(search ? "No one found" : "Your circle starts here")}</strong><p>{t(search ? "Search again by username." : "Search by username to find any account.")}</p></div>}
         </div>
         <div className="sidebar-bottom">
           <button className="signout-button" onClick={signOut}><LogOut size={15} /> {t("Sign out")}</button>
@@ -2190,19 +2226,22 @@ export default function App() {
           <header className="chat-header">
             <button className="icon-button back-button" aria-label="Back to people" onClick={() => setMobileChat(false)}><ArrowLeft size={19} /></button>
             <Avatar name={selectedPerson.name} online={onlineUsers.has(selectedPerson.id)} />
-            <div className="chat-person"><h2>{selectedPerson.name}</h2><span>{onlineUsers.has(selectedPerson.id) && <><i className="status-dot" /> {t("Active now")} · </>}{selectedPerson.isPrivate ? <><LockKeyhole size={12} /> {t("Private account")}</> : `@${selectedPerson.username}`}</span></div>
+            <div className="chat-person"><h2>{selectedPerson.name}</h2><span>{onlineUsers.has(selectedPerson.id) && <><i className="status-dot" /> {t("Active now")} · </>}{selectedPerson.isPrivate ? <><LockKeyhole size={12} /> {t("Private account")} · @{selectedPerson.username}</> : `@${selectedPerson.username}`}</span></div>
             <div className="chat-actions">
               {selectedPerson.connectionStatus === "connected" && session.user.messagingEnabled !== false && selectedPerson.messagingEnabled !== false && <>
                 <button className="icon-button call-action-button" type="button" disabled={!!callManager.call || !socket?.connected} onClick={() => callManager.startCall(selectedPerson, false)} aria-label={`Start audio call with ${selectedPerson.name}`} title="Audio call"><Phone size={17} /></button>
                 <button className="icon-button call-action-button" type="button" disabled={!!callManager.call || !socket?.connected} onClick={() => callManager.startCall(selectedPerson, true)} aria-label={`Start video call with ${selectedPerson.name}`} title="Video call"><Video size={18} /></button>
               </>}
-              <button className={`icon-button ${conversationSearchOpen ? "active" : ""}`} type="button" disabled={selectedPerson.connectionStatus !== "connected"} onClick={() => {
+              <button className={`icon-button ${conversationSearchOpen ? "active" : ""}`} type="button" disabled={!canOpenConversation} onClick={() => {
                 if (conversationSearchOpen) setConversationSearch("");
                 setConversationSearchOpen(!conversationSearchOpen);
               }} aria-label={t("Search conversation")} title={t("Search messages")}><Search size={18} /></button>
               <div className="conversation-menu-wrap" ref={conversationMenuRef}>
                 <button className={`icon-button ${conversationMenuOpen ? "active" : ""}`} type="button" onClick={() => setConversationMenuOpen((open) => !open)} aria-label={t("Conversation options")} aria-expanded={conversationMenuOpen}><MoreHorizontal size={20} /></button>
                 {conversationMenuOpen && <div className="conversation-menu" role="menu">
+                  <button type="button" role="menuitem" disabled={conversationActionBusy} onClick={toggleDeleteAfterSeen} aria-pressed={deleteAfterSeen}>
+                    <Clock3 size={15} />{t(deleteAfterSeen ? "Delete seen messages after 1 day: On" : "Delete seen messages after 1 day: Off")}
+                  </button>
                   <button type="button" role="menuitem" disabled={conversationActionBusy} onClick={clearConversation}><Trash2 size={15} />{t("Delete conversation")}</button>
                   <button type="button" role="menuitem" className={selectedPerson.isBlocked ? "" : "danger-menu-item"} disabled={conversationActionBusy} onClick={togglePersonBlock}>
                     <Ban size={15} />{t(selectedPerson.isBlocked ? "Unblock person" : "Block person")}
@@ -2212,7 +2251,7 @@ export default function App() {
               <button className="icon-button profile-quick-button" type="button" onClick={() => setProfileOpen(true)} aria-label={t("Open my profile")} title={t("My profile")}><UserRound size={18} /><span>{t("Profile")}</span></button>
             </div>
           </header>
-          {conversationSearchOpen && selectedPerson.connectionStatus === "connected" && <div className="conversation-search-bar">
+          {conversationSearchOpen && canOpenConversation && <div className="conversation-search-bar">
             <Search size={15} />
             <input ref={conversationSearchInputRef} value={conversationSearch} onChange={(event) => setConversationSearch(event.target.value)} onKeyDown={(event) => {
               if (event.key === "Escape") {
@@ -2228,7 +2267,7 @@ export default function App() {
             <h3>{t("This person is blocked.")}</h3>
             <p>{t("This person is blocked. Unblock them to send a connection request.")}</p>
             <button className="primary-button" type="button" disabled={conversationActionBusy} onClick={togglePersonBlock}>{conversationActionBusy ? t("Working…") : t("Unblock person")}</button>
-          </div> : selectedPerson.connectionStatus !== "connected" ? <div className="connection-gate">
+          </div> : selectedPerson.isPrivate && selectedPerson.connectionStatus !== "connected" ? <div className="connection-gate">
             <span className="welcome-icon"><LockKeyhole size={24} /></span>
             {error && <div className="form-error" role="alert">{error}</div>}
             {selectedPerson.connectionStatus === "received" ? <>

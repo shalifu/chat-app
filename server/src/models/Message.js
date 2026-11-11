@@ -24,6 +24,7 @@ const messageSchema = new mongoose.Schema(
     },
     editedAt: { type: Date, default: null },
     seenAt: { type: Date, default: null },
+    expiresAt: { type: Date, default: null },
     callType: { type: String, enum: ["audio", "video"] },
     callStatus: { type: String, enum: ["missed", "declined", "cancelled", "completed", "disconnected"] },
     durationSeconds: { type: Number, min: 0 },
@@ -33,5 +34,6 @@ const messageSchema = new mongoose.Schema(
 
 messageSchema.index({ sender: 1, recipient: 1, createdAt: 1 });
 messageSchema.index({ recipient: 1, sender: 1, createdAt: 1 });
+messageSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export default mongoose.model("Message", messageSchema);
