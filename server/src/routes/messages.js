@@ -1,5 +1,6 @@
-import { Router } from "express";
+import express, { Router } from "express";
 import mongoose from "mongoose";
+import { GridFSBucket } from "mongodb";
 import Connection from "../models/Connection.js";
 import Block from "../models/Block.js";
 import ConversationSetting from "../models/ConversationSetting.js";
@@ -7,8 +8,11 @@ import Message from "../models/Message.js";
 import User from "../models/User.js";
 import { requireAdult, requireAuth } from "../middleware/auth.js";
 import { resolveMessageContext } from "../services/messageContext.js";
+import { createNotification } from "../services/notifications.js";
 
 const messageActionWindowMs = 10 * 60 * 1000;
+const maxMediaBytes = 50 * 1024 * 1024;
+const mediaRetentionMs = 24 * 60 * 60 * 1000;
 
 function serializeMessage(message) {
   return {
@@ -17,6 +21,10 @@ function serializeMessage(message) {
     recipientId: message.recipient.toString(),
     type: message.type || "text",
     content: message.content,
+    mediaFileId: message.mediaFileId?.toString() || null,
+    mediaMimeType: message.mediaMimeType || null,
+    mediaName: message.mediaName || null,
+    mediaSize: message.mediaSize ?? null,
     replyTo: message.replyTo?.senderName && message.replyTo?.content !== undefined
       ? { senderName: message.replyTo.senderName, content: message.replyTo.content }
       : null,
@@ -35,6 +43,132 @@ function serializeMessage(message) {
 
 export default function createMessageRouter(io) {
   const router = Router();
+  let cleanupTimer;
+
+  function getMediaBucket() {
+    return new GridFSBucket(mongoose.connection.db, { bucketName: "messageMedia" });
+  }
+
+  async function cleanupExpiredMedia() {
+    if (mongoose.connection.readyState !== 1) return;
+    const bucket = getMediaBucket();
+    const files = await mongoose.connection.db.collection("messageMedia.files")
+      .find({ "metadata.expiresAt": { $lte: new Date() } }, { projection: { _id: 1 } })
+      .limit(100)
+      .toArray();
+    await Promise.all(files.map((file) => bucket.delete(file._id).catch(() => {})));
+  }
+
+  cleanupTimer = setInterval(() => cleanupExpiredMedia().catch((error) => console.error("Could not clean expired message media:", error)), 60 * 1000);
+  cleanupTimer.unref?.();
+
+  router.post("/media", requireAuth, requireAdult, (req, res, next) => {
+    express.raw({ type: "application/octet-stream", limit: maxMediaBytes })(req, res, (error) => {
+      if (error) return res.status(error.status === 413 ? 413 : 400).json({ message: error.status === 413 ? "Files must be 50 MB or smaller." : "Could not read this file." });
+      return next();
+    });
+  }, async (req, res, next) => {
+    let fileId;
+    try {
+      const recipientId = req.get("X-Recipient-Id") || "";
+      const mimeType = req.get("X-Media-Type") || "";
+      let originalName = req.get("X-File-Name") || "attachment";
+      try { originalName = decodeURIComponent(originalName); } catch { /* Keep the safe header value. */ }
+      originalName = originalName.replace(/[\\/\u0000-\u001f]/g, "_").slice(0, 255);
+      const file = req.body;
+      if (!mongoose.isValidObjectId(recipientId) || recipientId === req.userId) {
+        return res.status(400).json({ message: "Choose a valid person to message." });
+      }
+      if (!Buffer.isBuffer(file) || !file.length) return res.status(400).json({ message: "Choose a file to send." });
+      if (file.length > maxMediaBytes) return res.status(413).json({ message: "Files must be 50 MB or smaller." });
+      if (!/^(image|video|audio)\/[a-zA-Z0-9.+-]+$/.test(mimeType)) {
+        return res.status(415).json({ message: "Choose an image, GIF, video, or audio file." });
+      }
+      const [sender, recipient, connection] = await Promise.all([
+        User.findById(req.userId).select("name messagingEnabled +privateContacts"),
+        User.findById(recipientId).select("isPrivate messagingEnabled +privateContacts"),
+        Connection.findOne({ status: "accepted", $or: [
+          { memberA: req.userId, memberB: recipientId },
+          { memberA: recipientId, memberB: req.userId },
+        ] }),
+      ]);
+      if (!sender || !recipient) return res.status(404).json({ message: "That account could not be found." });
+      if (sender.messagingEnabled === false) return res.status(403).json({ message: "Messaging is disabled for your account." });
+      if (recipient.messagingEnabled === false) return res.status(403).json({ message: "This person is not accepting messages right now." });
+      if (await Block.exists({ $or: [
+        { blockedBy: req.userId, blockedUser: recipientId },
+        { blockedBy: recipientId, blockedUser: req.userId },
+      ] })) return res.status(403).json({ message: "This account cannot receive your messages." });
+      const legacyConnection = sender.privateContacts.some((contact) => contact.equals(recipientId)) &&
+        recipient.privateContacts.some((contact) => contact.equals(req.userId));
+      if (recipient.isPrivate && !connection && !legacyConnection) {
+        return res.status(403).json({ message: "Accept a connection request before sending a message." });
+      }
+
+      const kind = mimeType === "image/gif" ? "gif" : mimeType.startsWith("image/") ? "image" : mimeType.startsWith("video/") ? "video" : "audio";
+      const bucket = getMediaBucket();
+      const upload = bucket.openUploadStream(originalName, {
+        contentType: mimeType,
+        metadata: { senderId: req.userId, recipientId, expiresAt: null },
+      });
+      fileId = upload.id;
+      await new Promise((resolve, reject) => {
+        upload.once("error", reject);
+        upload.once("finish", resolve);
+        upload.end(file);
+      });
+      const message = await Message.create({
+        sender: req.userId,
+        recipient: recipientId,
+        type: kind,
+        content: "",
+        mediaFileId: fileId,
+        mediaMimeType: mimeType,
+        mediaName: originalName,
+        mediaSize: file.length,
+      });
+      await mongoose.connection.db.collection("messageMedia.files").updateOne(
+        { _id: fileId },
+        { $set: { "metadata.messageId": message._id.toString() } }
+      );
+      const responseMessage = serializeMessage(message);
+      await createNotification(io, {
+        recipient: recipientId,
+        sender: req.userId,
+        type: "direct_message",
+        title: `New ${kind} from ${sender.name}`,
+        body: "Open your notifications to view it.",
+        targetType: "person",
+        targetId: req.userId,
+      });
+      io.to(recipientId).emit("message:new", responseMessage);
+      return res.status(201).json({ message: responseMessage });
+    } catch (error) {
+      if (fileId) await getMediaBucket().delete(fileId).catch(() => {});
+      return next(error);
+    }
+  });
+
+  router.get("/media/:fileId", requireAuth, requireAdult, async (req, res, next) => {
+    try {
+      if (!mongoose.isValidObjectId(req.params.fileId)) return res.status(404).end();
+      const fileId = new mongoose.Types.ObjectId(req.params.fileId);
+      const message = await Message.findOne({ mediaFileId: fileId }).select("sender recipient expiresAt mediaMimeType mediaName").lean();
+      if (!message || (message.sender.toString() !== req.userId && message.recipient.toString() !== req.userId) ||
+        (message.expiresAt && message.expiresAt <= new Date())) return res.status(404).end();
+      const peerId = message.sender.toString() === req.userId ? message.recipient : message.sender;
+      if (await Block.exists({ $or: [
+        { blockedBy: req.userId, blockedUser: peerId },
+        { blockedBy: peerId, blockedUser: req.userId },
+      ] })) return res.status(403).end();
+      res.set("Content-Type", message.mediaMimeType || "application/octet-stream");
+      res.set("Cache-Control", "private, no-store");
+      res.set("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(message.mediaName || "attachment")}`);
+      return getMediaBucket().openDownloadStream(fileId).on("error", () => res.status(404).end()).pipe(res);
+    } catch (error) {
+      return next(error);
+    }
+  });
 
   router.patch("/:userId/seen", requireAuth, requireAdult, async (req, res, next) => {
     try {
@@ -75,10 +209,10 @@ export default function createMessageRouter(io) {
         sender: userId,
         recipient: req.userId,
         seenAt: null,
-      }).select("_id").lean();
+      }).select("_id mediaFileId type").lean();
       const messageIds = data.map((message) => message._id.toString());
       const seenAt = new Date();
-      let expiresAt = null;
+      const expiresAtByMessageId = {};
       if (messageIds.length) {
         const expirationEnabled = await ConversationSetting.exists({
           deleteAfterSeen: true,
@@ -87,24 +221,32 @@ export default function createMessageRouter(io) {
             { user: userId, contact: req.userId },
           ],
         });
-        if (expirationEnabled) expiresAt = new Date(seenAt.getTime() + 24 * 60 * 60 * 1000);
-        await Message.updateMany(
-          { _id: { $in: messageIds } },
-          { $set: {
-            seenAt,
-            ...(expiresAt ? { expiresAt } : {}),
-          } }
-        );
+        const mediaIds = data.filter((message) => message.mediaFileId).map((message) => message._id);
+        const textIds = data.filter((message) => !message.mediaFileId && message.type !== "call").map((message) => message._id);
+        const expiresAt = new Date(seenAt.getTime() + mediaRetentionMs);
+        await Message.updateMany({ _id: { $in: messageIds } }, { $set: { seenAt } });
+        if (mediaIds.length) {
+          await Message.updateMany({ _id: { $in: mediaIds } }, { $set: { expiresAt } });
+          for (const message of data.filter((item) => item.mediaFileId)) expiresAtByMessageId[message._id.toString()] = expiresAt;
+          await mongoose.connection.db.collection("messageMedia.files").updateMany(
+            { "metadata.messageId": { $in: mediaIds.map((id) => id.toString()) } },
+            { $set: { "metadata.expiresAt": expiresAt } }
+          );
+        }
+        if (expirationEnabled && textIds.length) {
+          await Message.updateMany({ _id: { $in: textIds } }, { $set: { expiresAt } });
+          for (const message of data.filter((item) => !item.mediaFileId && item.type !== "call")) expiresAtByMessageId[message._id.toString()] = expiresAt;
+        }
       }
       const payload = {
         senderId: userId,
         recipientId: req.userId,
         messageIds,
         seenAt,
-        expiresAt,
+        expiresAtByMessageId,
       };
       io.to(userId).to(req.userId).emit("message:seen", payload);
-      return res.json({ messageIds, seenAt, expiresAt });
+      return res.json({ messageIds, seenAt, expiresAtByMessageId });
     } catch (error) {
       return next(error);
     }
@@ -274,6 +416,7 @@ export default function createMessageRouter(io) {
         senderId: message.sender.toString(),
         recipientId: message.recipient.toString(),
       };
+      if (message.mediaFileId) await getMediaBucket().delete(message.mediaFileId).catch(() => {});
       io.to(response.senderId).to(response.recipientId).emit("message:deleted", response);
       return res.json({ messageId: response.messageId });
     } catch (error) {

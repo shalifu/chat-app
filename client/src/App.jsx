@@ -37,6 +37,9 @@ import {
   UserRound,
   UsersRound,
   Forward,
+  ImagePlus,
+  Mic,
+  Square,
   X,
 } from "lucide-react";
 
@@ -223,6 +226,14 @@ const kinyarwanda = {
   "Delete conversation": "Siba ibiganiro kuri iyi konti",
   "Delete seen messages after 1 day: On": "Siba ubutumwa bwabonwe nyuma y'umunsi 1: Bikora",
   "Delete seen messages after 1 day: Off": "Siba ubutumwa bwabonwe nyuma y'umunsi 1: Ntibikora",
+  "Attach image, GIF, or video": "Ongeraho ifoto, GIF cyangwa videwo",
+  "Image, GIF, or video": "Ifoto, GIF cyangwa videwo",
+  "Stop voice note": "Hagarika gufata amajwi",
+  "Record voice note": "Fata ubutumwa bw'amajwi",
+  "Stop recording": "Hagarika gufata amajwi",
+  "Voice note": "Ubutumwa bw'amajwi",
+  "Recording voice note": "Turimo gufata amajwi",
+  "Files up to 50 MB. Media deletes one day after seen.": "Amadosiye agera kuri 50 MB. Amashusho n'amajwi bisibwa nyuma y'umunsi umwe bimaze kurebwa.",
   "Clear this conversation from your view? Messages will remain visible to the other person.": "Siba ibiganiro kuri konti yawe? Ubutumwa buzakomeza kuboneka ku wundi muntu.",
   "Block person": "Hagarika uyu muntu",
   "Unblock person": "Ongera wemerere uyu muntu",
@@ -384,12 +395,13 @@ function canChangeMessage(createdAt) {
   return Number.isFinite(age) && age >= 0 && age < messageActionWindowMs;
 }
 
-function MessageItem({ message, own, avatarName, senderName, sourceType, onEdit, onDelete, onReply, onForward }) {
+function MessageItem({ message, own, avatarName, senderName, sourceType, token, onEdit, onDelete, onReply, onForward }) {
   const t = useT();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
   const [busy, setBusy] = useState(false);
   const [withinActionWindow, setWithinActionWindow] = useState(() => own && canChangeMessage(message.createdAt));
+  const [mediaUrl, setMediaUrl] = useState("");
   const readReceipt = own && sourceType === "direct" && message.type !== "call" && (
     <span className="read-receipt" aria-label={t(message.seenAt ? "Seen" : "Not seen")} title={t(message.seenAt ? "Seen" : "Not seen")}>
       {message.seenAt ? <CheckCheck size={14} /> : <Check size={14} />}
@@ -411,6 +423,27 @@ function MessageItem({ message, own, avatarName, senderName, sourceType, onEdit,
     }, expiresIn);
     return () => window.clearTimeout(timeoutId);
   }, [message.createdAt, own]);
+
+  useEffect(() => {
+    if (!message.mediaFileId || !token) return undefined;
+    let active = true;
+    let objectUrl = "";
+    fetch(`${API_URL}/api/messages/media/${message.mediaFileId}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((response) => {
+        if (!response.ok) throw new Error("Media is no longer available.");
+        return response.blob();
+      })
+      .then((blob) => {
+        if (!active) return;
+        objectUrl = URL.createObjectURL(blob);
+        setMediaUrl(objectUrl);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [message.mediaFileId, token]);
 
   if (message.type === "call") {
     const icon = message.callType === "video" ? <Video size={17} /> : <Phone size={17} />;
@@ -487,15 +520,20 @@ function MessageItem({ message, own, avatarName, senderName, sourceType, onEdit,
           <button type="submit" disabled={!draft.trim() || draft.trim() === message.content || busy}>{busy ? t("Working…") : t("Save")}</button>
           <button type="button" disabled={busy} onClick={() => { setDraft(message.content); setEditing(false); }}>{t("Cancel")}</button>
         </span>
-      </form> : <div className="message-bubble">
+      </form> : <div className={`message-bubble ${message.mediaFileId ? "media-message-bubble" : ""}`}>
         {message.replyTo && <div className="message-reply-preview"><strong>{message.replyTo.senderName}</strong><span>{message.replyTo.content}</span></div>}
-        {message.content}
+        {message.mediaFileId && !mediaUrl && <span className="media-loading">Loading attachment…</span>}
+        {message.mediaFileId && mediaUrl && message.type === "image" && <img className="message-image" src={mediaUrl} alt={message.mediaName || "Shared image"} />}
+        {message.mediaFileId && mediaUrl && message.type === "gif" && <img className="message-image" src={mediaUrl} alt={message.mediaName || "Shared GIF"} />}
+        {message.mediaFileId && mediaUrl && message.type === "video" && <video className="message-video" src={mediaUrl} controls preload="metadata" />}
+        {message.mediaFileId && mediaUrl && message.type === "audio" && <audio className="message-audio" src={mediaUrl} controls preload="metadata" />}
+        {message.content && <span>{message.content}</span>}
       </div>}
       {!editing && <div className="message-actions">
         <button type="button" disabled={busy} onClick={() => onReply({ ...message, senderName: senderName || message.senderName, sourceType })}>{t("Reply")}</button>
-        <button type="button" disabled={busy} onClick={() => onForward({ ...message, senderName: senderName || message.senderName, sourceType })}>{t("Forward")}</button>
+        {!message.mediaFileId && <button type="button" disabled={busy} onClick={() => onForward({ ...message, senderName: senderName || message.senderName, sourceType })}>{t("Forward")}</button>}
         {own && withinActionWindow && <>
-          <button type="button" disabled={busy} onClick={() => { setDraft(message.content); setEditing(true); }}>{t("Edit")}</button>
+          {!message.mediaFileId && <button type="button" disabled={busy} onClick={() => { setDraft(message.content); setEditing(true); }}>{t("Edit")}</button>}
           <button type="button" disabled={busy} onClick={deleteMessage}>{t("Delete")}</button>
         </>}
       </div>}
@@ -938,6 +976,7 @@ function GroupChatPanel({ group, session, messages, onMessagesLoaded, onMessage,
               own={own}
               senderName={message.senderName}
               sourceType="group"
+              token={session.token}
               onEdit={editGroupMessage}
               onDelete={deleteGroupMessage}
               onReply={setReplyTarget}
@@ -1188,6 +1227,7 @@ export default function App() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
+  const [recordingVoice, setRecordingVoice] = useState(false);
   const [mobileChat, setMobileChat] = useState(false);
   const [adminView, setAdminView] = useState(() => {
     try { return JSON.parse(localStorage.getItem("ububiko-session") || "null")?.user?.isAdmin === true; } catch { return false; }
@@ -1211,6 +1251,12 @@ export default function App() {
   const [onlineUsers, setOnlineUsers] = useState(() => new Set());
   const messageEndRef = useRef(null);
   const inputRef = useRef(null);
+  const mediaInputRef = useRef(null);
+  const recorderRef = useRef(null);
+  const recorderStreamRef = useRef(null);
+  const voiceChunksRef = useRef([]);
+  const voiceBytesRef = useRef(0);
+  const voiceTooLargeRef = useRef(false);
   const conversationSearchInputRef = useRef(null);
   const conversationMenuRef = useRef(null);
   const selectedIdRef = useRef(selectedId);
@@ -1494,13 +1540,13 @@ export default function App() {
     socket.on("message:deleted", ({ messageId }) => {
       setMessages((current) => current.filter((item) => item.id !== messageId));
     });
-    socket.on("message:seen", ({ senderId, messageIds = [], seenAt, expiresAt }) => {
+    socket.on("message:seen", ({ senderId, messageIds = [], seenAt, expiresAtByMessageId = {} }) => {
       const currentUser = sessionRef.current?.user;
       if (!messageIds.length || !currentUser || senderId !== currentUser.id) return;
       const seenTime = seenAt || new Date().toISOString();
       setMessages((current) => current.map((item) =>
         messageIds.includes(item.id) && item.senderId === currentUser.id
-          ? { ...item, seenAt: seenTime, ...(expiresAt ? { expiresAt } : {}) }
+          ? { ...item, seenAt: seenTime, ...(expiresAtByMessageId[item.id] ? { expiresAt: expiresAtByMessageId[item.id] } : {}) }
           : item
       ));
     });
@@ -1699,7 +1745,7 @@ export default function App() {
     const activeSession = sessionRef.current;
     if (!activeSession || !personId) return false;
     try {
-      const { messageIds, seenAt: markedAt, expiresAt } = await api(`/messages/${personId}/seen`, {
+      const { messageIds, seenAt: markedAt, expiresAtByMessageId = {} } = await api(`/messages/${personId}/seen`, {
         token: activeSession.token,
         method: "PATCH",
       });
@@ -1707,7 +1753,7 @@ export default function App() {
       const seenAt = markedAt || new Date().toISOString();
       setMessages((current) => current.map((message) =>
         message.senderId === personId && message.recipientId === activeSession.user.id && !message.seenAt && messageIds.includes(message.id)
-          ? { ...message, seenAt, ...(expiresAt ? { expiresAt } : {}) }
+          ? { ...message, seenAt, ...(expiresAtByMessageId[message.id] ? { expiresAt: expiresAtByMessageId[message.id] } : {}) }
           : message
       ));
       return true;
@@ -1907,6 +1953,87 @@ export default function App() {
       setError(requestError.message);
     } finally {
       setSending(false);
+    }
+  }
+
+  async function sendMediaFile(file) {
+    if (!file || !selectedId || sending) return;
+    if (file.size > 50 * 1024 * 1024) {
+      setError("Files must be 50 MB or smaller.");
+      return;
+    }
+    if (!/^(image|video|audio)\//.test(file.type)) {
+      setError("Choose an image, GIF, video, or audio file.");
+      return;
+    }
+    setSending(true);
+    setError("");
+    try {
+      const response = await fetch(`${API_URL}/api/messages/media`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.token}`,
+          "Content-Type": "application/octet-stream",
+          "X-Media-Type": file.type,
+          "X-Recipient-Id": selectedId,
+          "X-File-Name": encodeURIComponent(file.name || "voice-note.webm"),
+        },
+        body: file,
+      });
+      let data;
+      try { data = await response.json(); } catch { throw new Error("The server returned an invalid response."); }
+      if (!response.ok) throw new Error(data.message || "We couldn't send that file.");
+      setMessages((current) => current.some((item) => item.id === data.message.id) ? current : [...current, data.message]);
+      setPeople((current) => updatePersonLastMessage(current, selectedId, data.message.createdAt));
+      setReplyTarget(null);
+    } catch (requestError) {
+      setError(requestError.message || "Could not send that file.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function toggleVoiceRecording() {
+    if (recordingVoice) {
+      recorderRef.current?.stop();
+      return;
+    }
+    if (sending || !selectedId) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      recorderStreamRef.current = stream;
+      recorderRef.current = recorder;
+      voiceChunksRef.current = [];
+      voiceBytesRef.current = 0;
+      voiceTooLargeRef.current = false;
+      recorder.ondataavailable = (event) => {
+        if (!event.data?.size) return;
+        voiceBytesRef.current += event.data.size;
+        if (voiceBytesRef.current > 50 * 1024 * 1024) {
+          voiceTooLargeRef.current = true;
+          recorder.stop();
+          setError("Voice notes must be 50 MB or smaller.");
+          return;
+        }
+        voiceChunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        stream.getTracks().forEach((track) => track.stop());
+        setRecordingVoice(false);
+        if (!voiceTooLargeRef.current && voiceChunksRef.current.length) {
+          const blob = new Blob(voiceChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+          void sendMediaFile(new File([blob], "voice-note.webm", { type: blob.type }));
+        }
+        recorderRef.current = null;
+        recorderStreamRef.current = null;
+      };
+      recorder.start(1000);
+      setError("");
+      setRecordingVoice(true);
+    } catch (requestError) {
+      recorderStreamRef.current?.getTracks().forEach((track) => track.stop());
+      setError(requestError.message || "Microphone access is needed to record a voice note.");
     }
   }
 
@@ -2299,6 +2426,7 @@ export default function App() {
                   avatarName={selectedPerson.name}
                   senderName={own ? session.user.name : selectedPerson.name}
                   sourceType="direct"
+                  token={session.token}
                   onEdit={editDirectMessage}
                   onDelete={deleteDirectMessage}
                   onReply={setReplyTarget}
@@ -2310,6 +2438,12 @@ export default function App() {
             {error && <div className="inline-error" role="alert">{error}<button onClick={() => setError("")} aria-label={t("Dismiss error")}><X size={14} /></button></div>}
             {canMessage ? <div className="composer-wrap">
               {replyTarget && <div className="reply-composer-preview"><span><strong>{t("Replying to")} {replyTarget.senderName}</strong><small>{replyTarget.content}</small></span><button type="button" onClick={() => setReplyTarget(null)} aria-label={t("Cancel reply")}><X size={15} /></button></div>}
+              <input ref={mediaInputRef} className="media-file-input" type="file" accept="image/*,video/*,audio/*" onChange={(event) => { const [file] = event.target.files || []; if (file) void sendMediaFile(file); event.target.value = ""; }} />
+              <div className="composer-media-tools">
+                <button className="composer-media-button" type="button" disabled={sending} onClick={() => mediaInputRef.current?.click()} aria-label={t("Attach image, GIF, or video")} title={t("Attach image, GIF, or video")}><ImagePlus size={19} /> {t("Image, GIF, or video")}</button>
+                <button className={`composer-media-button ${recordingVoice ? "recording" : ""}`} type="button" disabled={sending && !recordingVoice} onClick={toggleVoiceRecording} aria-label={t(recordingVoice ? "Stop voice note" : "Record voice note")} title={t(recordingVoice ? "Stop voice note" : "Record voice note")}>{recordingVoice ? <Square size={17} /> : <Mic size={19} />} {t(recordingVoice ? "Stop recording" : "Voice note")}</button>
+                <span>{t("Files up to 50 MB. Media deletes one day after seen.")}</span>
+              </div>
               <form className="composer" onSubmit={sendMessage}><EmojiPicker value={draft} onChange={setDraft} textareaRef={inputRef} /><textarea ref={inputRef} value={draft} onChange={(event) => { setDraft(event.target.value); event.currentTarget.style.height = "auto"; event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 120)}px`; }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={`${t("Write a message to")} ${selectedPerson.name.split(/\s+/)[0]}…`} maxLength={4000} rows={1} /><button type="submit" className="send-button" disabled={!draft.trim() || sending} aria-label={t("Send message")}>{sending ? <span className="send-loading" /> : <Send size={17} />}</button></form><div className="composer-hint"><span>{t("Keep it kind. Keep it you.")}</span><span><kbd>Enter</kbd> {t("to send")} <span className="hint-dot">·</span> <kbd>Shift + Enter</kbd> {t("for a new line")}</span></div>
             </div> : <div className="messaging-disabled"><ShieldOff size={17} /><span>{session.user.messagingEnabled === false ? t("Messaging disabled for your account.") : <>{selectedPerson.name} {t("is not accepting messages right now.")}</>}</span></div>}
           </>}
