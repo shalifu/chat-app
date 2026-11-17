@@ -61,7 +61,7 @@ The client uses `VITE_API_URL` when set; otherwise, it connects to `http://local
 
 3. Sign in through the normal email/password login and choose **Admin dashboard** in the sidebar. Admin access is a role on the existing account; no shared or hard-coded admin password is used.
 
-The dashboard lists accounts and registration/login/last-active details; reports sign-ins, messages, server uptime, currently active users, and estimated time spent with the app open; and lets administrators disable messaging or delete non-admin accounts and their associated data. Admin APIs enforce authorization on the server. Admin accounts cannot be deleted from the dashboard, and admin roles can only be granted from the server command line.
+The dashboard lists accounts and registration/login/last-active details; reports sign-ins, messages, server uptime, currently active users, and estimated time spent with the app open; summarizes audio/video, missed calls, and total call time; and lets administrators disable messaging or delete non-admin accounts and their associated data. Admin APIs enforce authorization on the server. Admin accounts cannot be deleted from the dashboard, and admin roles can only be granted from the server command line.
 
 Administrators can also send an in-app notification to all accounts or to one selected account from the dashboard. Announcements appear in each recipient's notification inbox.
 

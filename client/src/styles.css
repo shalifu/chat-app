@@ -378,6 +378,10 @@ kbd { font: 500 9px "DM Sans", sans-serif; color: #a1a2b0; background: #f6f6f9; 
 .admin-stat > span:last-child { display: flex; flex-direction: column; gap: 4px; }
 .admin-stat strong { color: var(--ink); font: 700 17px Manrope, sans-serif; }
 .admin-stat small { color: #9a9bab; font-size: 9px; }
+.admin-call-activity { margin: -11px 0 30px; }
+.admin-call-activity h3 { margin: 0 0 11px; color: #3f4054; font: 700 14px Manrope, sans-serif; }
+.admin-call-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.admin-call-stat { min-height: 67px; }
 .admin-notification-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: -12px 0 28px; padding: 17px; border: 1px solid #eeeff4; border-radius: 12px; background: #fff; }
 .admin-notification-heading { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; }
 .admin-notification-heading h3 { margin: 0 0 4px; color: var(--ink); font: 700 13px Manrope, sans-serif; }
@@ -577,6 +581,7 @@ kbd { font: 500 9px "DM Sans", sans-serif; color: #a1a2b0; background: #f6f6f9; 
 .dark-mode .settings-copy-button { border-color: #3a3b48; background: #20212b; }
 .dark-mode .admin-dashboard { background: #20212b; }
 .dark-mode .admin-stat, .dark-mode .admin-users, .dark-mode .admin-search, .dark-mode .admin-refresh { border-color: #3a3b48; background: #252630; }
+.dark-mode .admin-call-activity h3 { color: #eeeeF5; }
 .dark-mode .admin-notification-form { border-color: #3a3b48; background: #252630; }
 .dark-mode .admin-notification-form label { color: #b4b5c5; }
 .dark-mode .admin-notification-form input, .dark-mode .admin-notification-form select, .dark-mode .admin-notification-form textarea { border-color: #3a3b48; color: #eeeeF5; background: #20212b; }
@@ -662,6 +667,8 @@ kbd { font: 500 9px "DM Sans", sans-serif; color: #a1a2b0; background: #f6f6f9; 
   .admin-header p { max-width: 240px; line-height: 1.6; }
   .admin-refresh { padding: 8px; font-size: 0; }
   .admin-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 22px 0 25px; }
+  .admin-call-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+  .admin-call-activity { margin-bottom: 25px; }
   .admin-notification-form { grid-template-columns: 1fr; padding: 13px; }
   .admin-notification-form label:nth-of-type(3) { grid-column: auto; }
   .admin-stat { min-height: 68px; gap: 7px; padding: 9px 8px; }

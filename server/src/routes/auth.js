@@ -33,14 +33,6 @@ function isValidUsername(value) {
   return /^[a-z0-9_]{3,24}$/.test(value);
 }
 
-async function createUserCode() {
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    const code = String(randomInt(10000, 100000));
-    if (!(await User.exists({ userCode: code }))) return code;
-  }
-  throw new Error("Could not allocate a unique user ID.");
-}
-
 router.post("/register", async (req, res, next) => {
   try {
     const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
@@ -68,11 +60,6 @@ router.post("/register", async (req, res, next) => {
     if (password.length < 8 || password.length > 72) {
       return res.status(400).json({ message: "Password must be between 8 and 72 characters." });
     }
-    const existing = await User.exists({ $or: [{ email }, { username }] });
-    if (existing) {
-      return res.status(409).json({ message: "That email or username is already in use." });
-    }
-
     const passwordHash = await bcrypt.hash(password, 12);
     for (let attempt = 0; attempt < 10; attempt += 1) {
       try {
@@ -81,7 +68,7 @@ router.post("/register", async (req, res, next) => {
           username,
           age,
           isPrivate: req.body.isPrivate === true,
-          userCode: await createUserCode(),
+          userCode: String(randomInt(10000, 100000)),
           email,
           passwordHash,
         });
@@ -174,7 +161,7 @@ router.patch("/profile", requireAuth, async (req, res, next) => {
     user.name = name;
     if (req.body.isPrivate !== undefined) user.isPrivate = req.body.isPrivate;
     for (let attempt = 0; !user.userCode && attempt < 10; attempt += 1) {
-      user.userCode = await createUserCode();
+      user.userCode = String(randomInt(10000, 100000));
       try {
         await user.save();
       } catch (error) {

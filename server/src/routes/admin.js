@@ -22,7 +22,7 @@ router.get("/analytics", async (_req, res, next) => {
     const now = new Date();
     const activeSince = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const monthSince = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const [users, usage, monthUsage, directMessages, groupMessages, groupCount] = await Promise.all([
+    const [users, usage, monthUsage, directMessages, groupMessages, groupCount, callActivity] = await Promise.all([
       User.find()
         .select("name username age isPrivate email messagingEnabled isAdmin createdAt lastLoginAt loginCount")
         .sort({ createdAt: -1 })
@@ -53,6 +53,19 @@ router.get("/analytics", async (_req, res, next) => {
       Message.aggregate([{ $group: { _id: "$sender", count: { $sum: 1 } } }]),
       GroupMessage.aggregate([{ $group: { _id: "$sender", count: { $sum: 1 } } }]),
       Group.countDocuments(),
+      Message.aggregate([
+        { $match: { type: "call" } },
+        {
+          $group: {
+            _id: null,
+            totalCalls: { $sum: 1 },
+            audioCalls: { $sum: { $cond: [{ $eq: ["$callType", "audio"] }, 1, 0] } },
+            videoCalls: { $sum: { $cond: [{ $eq: ["$callType", "video"] }, 1, 0] } },
+            missedCalls: { $sum: { $cond: [{ $eq: ["$callStatus", "missed"] }, 1, 0] } },
+            durationSeconds: { $sum: { $ifNull: ["$durationSeconds", 0] } },
+          },
+        },
+      ]),
     ]);
 
     const usageByUser = new Map(usage.map((item) => [item._id.toString(), item]));
@@ -92,6 +105,11 @@ router.get("/analytics", async (_req, res, next) => {
         last30DaysActiveSeconds: monthUsage[0]?.activeSeconds || 0,
         totalMessages: [...messagesByUser.values()].reduce((total, count) => total + count, 0),
         totalGroups: groupCount,
+        totalCalls: callActivity[0]?.totalCalls || 0,
+        audioCalls: callActivity[0]?.audioCalls || 0,
+        videoCalls: callActivity[0]?.videoCalls || 0,
+        missedCalls: callActivity[0]?.missedCalls || 0,
+        callDurationSeconds: callActivity[0]?.durationSeconds || 0,
         serverUptimeSeconds: Math.floor(process.uptime()),
       },
       users: serializedUsers,

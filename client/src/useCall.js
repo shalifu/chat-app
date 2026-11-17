@@ -92,6 +92,17 @@ export default function useCall(socket, token, onIncomingCall) {
     publishCall(null);
   }, [publishCall, socket, stopMedia]);
 
+  const emitCallSignal = useCallback((eventName, payload) => new Promise((resolve, reject) => {
+    if (!socket?.connected) {
+      reject(new Error("The live connection was lost. The call has ended."));
+      return;
+    }
+    socket.emit(eventName, payload, (result) => {
+      if (result?.ok) resolve(result);
+      else reject(new Error(result?.message || "Could not exchange call setup information."));
+    });
+  }), [socket]);
+
   const loadIceServers = useCallback(async () => {
     const response = await fetch(`${API_URL}/api/calls/ice-servers`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -386,7 +397,7 @@ export default function useCall(socket, token, onIncomingCall) {
         const offer = await connection.createOffer();
         await connection.setLocalDescription(offer);
         publishCall({ ...activeCall, status: "connecting" });
-        socket.emit("call:offer", { callId, description: connection.localDescription });
+        await emitCallSignal("call:offer", { callId, description: connection.localDescription });
       } catch (error) {
         setCallError(error.message || "Could not start the call.");
         endCall();
@@ -407,7 +418,7 @@ export default function useCall(socket, token, onIncomingCall) {
         pendingCandidatesRef.current = [];
         const answer = await connection.createAnswer();
         await connection.setLocalDescription(answer);
-        socket.emit("call:answer", { callId, description: connection.localDescription });
+        await emitCallSignal("call:answer", { callId, description: connection.localDescription });
       } catch (error) {
         setCallError(error.message || "Could not answer the call.");
         endCall();
@@ -481,7 +492,7 @@ export default function useCall(socket, token, onIncomingCall) {
       socket.off("disconnect", onDisconnect);
       if (callRef.current) endCall(false);
     };
-  }, [endCall, publishCall, socket]);
+  }, [emitCallSignal, endCall, publishCall, socket]);
 
   return {
     call,

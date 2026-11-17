@@ -1,6 +1,6 @@
 import { createContext, lazy, Suspense, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
-import { Phone, Video } from "lucide-react";
+import { Phone, PhoneCall, Video } from "lucide-react";
 import CallOverlay from "./CallOverlay.jsx";
 import useCall from "./useCall.js";
 import {
@@ -161,6 +161,12 @@ const kinyarwanda = {
   "Messages sent": "Ubutumwa bwoherejwe",
   "Total sign-ins": "Inshuro zose zinjiwemo",
   "Groups": "Amatsinda",
+  "Voice and video calls": "Ihamagara ry'amajwi n'amashusho",
+  "Total calls": "Ihamagara zose",
+  "Audio calls": "Ihamagara ry'amajwi",
+  "Video calls": "Ihamagara ry'amashusho",
+  "Missed calls": "Ihamagara zititabiriwe",
+  "Call time": "Igihe cy'ihamagara",
   "Sorted by tracked usage. Server uptime": "Bikurikiranye hakurikijwe imikoreshereze. Seriveri imaze",
   "Joined": "Yinjiye",
   "Last sign-in": "Aheruka kwinjira",
@@ -1129,6 +1135,16 @@ function AdminDashboard({ session, onUserUpdated, onUserDeleted }) {
         <div className="admin-stat"><span className="admin-stat-icon private"><LogIn size={18} /></span><span><strong>{summary?.totalLogins ?? 0}</strong><small>{t("Total sign-ins")}</small></span></div>
         <div className="admin-stat"><span className="admin-stat-icon"><UsersRound size={18} /></span><span><strong>{summary?.totalGroups ?? 0}</strong><small>{t("Groups")}</small></span></div>
       </div>
+      <section className="admin-call-activity" aria-labelledby="admin-call-activity-title">
+        <h3 id="admin-call-activity-title">{t("Voice and video calls")}</h3>
+        <div className="admin-call-stats">
+          <div className="admin-stat admin-call-stat"><span className="admin-stat-icon"><PhoneCall size={18} /></span><span><strong>{summary?.totalCalls ?? 0}</strong><small>{t("Total calls")}</small></span></div>
+          <div className="admin-stat admin-call-stat"><span className="admin-stat-icon enabled"><Phone size={18} /></span><span><strong>{summary?.audioCalls ?? 0}</strong><small>{t("Audio calls")}</small></span></div>
+          <div className="admin-stat admin-call-stat"><span className="admin-stat-icon private"><Video size={18} /></span><span><strong>{summary?.videoCalls ?? 0}</strong><small>{t("Video calls")}</small></span></div>
+          <div className="admin-stat admin-call-stat"><span className="admin-stat-icon paused"><Phone size={18} /></span><span><strong>{summary?.missedCalls ?? 0}</strong><small>{t("Missed calls")}</small></span></div>
+          <div className="admin-stat admin-call-stat"><span className="admin-stat-icon private"><Clock3 size={18} /></span><span><strong>{formatDuration(summary?.callDurationSeconds)}</strong><small>{t("Call time")}</small></span></div>
+        </div>
+      </section>
       <form className="admin-notification-form" onSubmit={sendAdminNotification}>
         <div className="admin-notification-heading"><span className="admin-stat-icon"><Bell size={17} /></span><div><h3>{t("Send a notification")}</h3><p>{t("Send an announcement to everyone or one account.")}</p></div></div>
         <label>{t("Send to")}
